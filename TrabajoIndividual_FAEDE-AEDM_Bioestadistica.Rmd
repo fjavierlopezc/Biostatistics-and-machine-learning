@@ -1,0 +1,986 @@
+---
+title: "TRABAJO INDIVIDUAL FEADE-AEDM"
+author: "Francisco Javier López Carbonell"
+date: "01/12/2023"
+output:
+  html_document:
+    toc: yes
+    toc_depth: 2
+    warning: no
+    toc_float: yes
+    collapsed: yes
+    smooth_scroll: yes
+    highlight: kate
+    df_print: paged
+    theme: spacelab
+    code_folding: show
+  pdf_document:
+    toc: yes
+    toc_depth: '3'
+---
+# BIOESTADÍSTICA - MÁSTER EN BIOINFORMÁTICA 2023/2024
+
+## 1. Estudio del conjunto de genes significativos
+
+**A. Ordena las variables de acuerdo a su información. Obtén los estadísticos descriptivos y representa la expresión de los once genes, para cada grupo del
+factor Class.**
+
+```{r}
+#Configuramos el directorio de trabajo
+getwd()
+setwd("C:/Users/Javi2/OneDrive/Escritorio/Entrega1-Bioestadística")
+#Cargamos los datos sobre los que vamos a trabajar (archivo.csv)
+library(readr)
+pone_0187371_s002 <- read_csv("pone.0187371.s002.csv")
+#En primer lugar, seleccionamos las variables que nos han tocado (86-96)
+datos_select <- pone_0187371_s002[, 86:96]
+```
+```{r}
+#Ordenamos variables según su información (de mayor a menor varianza)
+datos.autismo <- datos_select[, order(apply(datos_select, 2, var), decreasing = T)]
+#Incorporamos factor (control y autismo como ultima columna del dataset seleccionado)
+datos.autismo$factor <- factor(pone_0187371_s002$Class)
+#Le pongo un prefijo no numérico a los nombres de las columnas primeramente excepto a la de factor
+colnames(datos.autismo) <- paste0("x.", colnames(datos.autismo))
+datos.autismo$x.factor <- NULL
+datos.autismo$factor <- factor(pone_0187371_s002$Class)
+```
+```{r}
+datos.autismo
+```
+```{r}
+summary(datos.autismo)
+```
+Calculamos los estadisticos descriptivos para cada gen por grupos.
+```{r}
+# Iterar sobre cada nivel del factor
+niveles_factor <- levels(datos.autismo$factor)
+resultados <- list()
+for (nivel in niveles_factor) {
+#Subconjunto de datos para el nivel actual del factor
+  datos_nivel <- subset(datos.autismo, factor == nivel)
+#Calcular las estadísticas descriptivas para cada columna
+  estadisticas <- sapply(datos_nivel[, -ncol(datos_nivel)], function(x) {
+    c(media = mean(x, na.rm = TRUE),
+      mediana = median(x, na.rm = TRUE),
+      rango = range(x, na.rm = TRUE),
+      varianza = var(x, na.rm = TRUE),
+      desviacion_tipica = sd(x, na.rm = TRUE))
+  })
+  
+  resultados[[nivel]] <- estadisticas
+}
+                         
+resultados
+```
+
+REPRESENTACIÓN GRÁFICA DE LOS 11 GENES
+
+```{r}
+par(mfrow=c(1,1)) 
+boxplot(datos.autismo$x.205486_at~datos.autismo$factor,col=c(2,3),main="Valores de expresion x.205486_at")
+boxplot(datos.autismo$x.234972_at~datos.autismo$factor,col=c(2,3),main="Valores de expresion x.234972_at")
+boxplot(datos.autismo$x.212848_s_at~datos.autismo$factor,col=c(2,3),main="Valores de expresion x.212848_s_at")
+boxplot(datos.autismo$x.232674_at~datos.autismo$factor,col=c(2,3),main="Valores de expresion x.232674_at")
+boxplot(datos.autismo$x.235889_at~datos.autismo$factor,col=c(2,3),main="Valores de expresion x.235889_at")
+boxplot(datos.autismo$x.1553235_at~datos.autismo$factor,col=c(2,3),main="Valores de expresion x.1553235_at")
+boxplot(datos.autismo$x.244494_at~datos.autismo$factor,col=c(2,3),main="Valores de expresion x.244494_at")
+boxplot(datos.autismo$x.233835_at~datos.autismo$factor,col=c(2,3),main="Valores de expresion x.233835_at")
+boxplot(datos.autismo$x.242767_at~datos.autismo$factor,col=c(2,3),main="Valores de expresion x.242767_at")
+boxplot(datos.autismo$x.1552734_at~datos.autismo$factor,col=c(2,3),main="Valores de expresion x.1552734_at")
+boxplot(datos.autismo$x.242980_at~datos.autismo$factor,col=c(2,3),main="Valores de expresion x.242980_at")
+```
+
+*Interpretación*
+
+De la representación gráfica podemos extraer que a priori no parece que ningún gen sea un gran marcador de la enfermedad, ya que valores de expresión entre control y autismo son similares.
+Por otro lado, dependiendo del gen encontramos valores mas próximos a su media (ejemplo: x.235889_at) o mas dispersos (ejemplo: x.244494_at).
+También vemos diferencias en los errores para cada clase en cada gen.
+Por último, comentar que los valores estadisticos coinciden en este boxplot con los valores calculados. Ejemplo: banda negra central de las cajas (mediana) y rango de valores. 
+
+**B. Estudia la normalidad de los valores de expresión de cada gen a través de los
+gráficos cuantil-cuantil y de los contrastes de normalidad adecuados.**
+```{r}
+#ESTUDIO DE NORMALIDAD MEDIANTE REPRESENTACIÓN CAUNTIL-CUANTIL (QQ-PLOT)
+
+o=par(mfrow=c(1,2))
+
+#gen x.205486_at
+qqnorm(datos.autismo$x.205486_at[datos.autismo$factor=="Control"], xlab = "Cuantiles teoricos", ylab = "Ejemplos de cuantiles",main = "Prueba de normalidad de Control");qqline(datos.autismo$x.205486_at[datos.autismo$factor=="Control"],col=2) 
+qqnorm(datos.autismo$x.205486_at[datos.autismo$factor=="Autism"], xlab = "Cuantiles teoricos", ylab = "Ejemplos de cuantiles",main = "Prueba de normalidad de Autism");qqline(datos.autismo$x.205486_at[datos.autismo$factor=="Autism"],col=2)
+```
+
+```{r}
+o=par(mfrow=c(1,2))
+#gen x.234972_at
+qqnorm(datos.autismo$x.234972_at[datos.autismo$factor=="Control"], xlab = "Cuantiles teoricos", ylab = "Ejemplos de cuantiles",main = "Prueba de normalidad de Control");qqline(datos.autismo$x.234972_at[datos.autismo$factor=="Control"],col=2) 
+qqnorm(datos.autismo$x.234972_at[datos.autismo$factor=="Autism"], xlab = "Cuantiles teoricos", ylab = "Ejemplos de cuantiles",main = "Prueba de normalidad de Autism");qqline(datos.autismo$x.234972_at[datos.autismo$factor=="Autism"],col=2)
+```
+
+```{r}
+o=par(mfrow=c(1,2))
+#gen x.212848_s_at
+qqnorm(datos.autismo$x.212848_s_at[datos.autismo$factor=="Control"], xlab = "Cuantiles teoricos", ylab = "Ejemplos de cuantiles",main = "Prueba de normalidad de Control");qqline(datos.autismo$x.212848_s_at[datos.autismo$factor=="Control"],col=2) 
+qqnorm(datos.autismo$x.212848_s_at[datos.autismo$factor=="Autism"], xlab = "Cuantiles teoricos", ylab = "Ejemplos de cuantiles",main = "Prueba de normalidad de Autism");qqline(datos.autismo$x.212848_s_at[datos.autismo$factor=="Autism"],col=2)
+```
+
+```{r}
+o=par(mfrow=c(1,2))
+#gen x.232674_at
+qqnorm(datos.autismo$x.232674_at[datos.autismo$factor=="Control"], xlab = "Cuantiles teoricos", ylab = "Ejemplos de cuantiles",main = "Prueba de normalidad de Control");qqline(datos.autismo$x.232674_at[datos.autismo$factor=="Control"],col=2) 
+qqnorm(datos.autismo$x.232674_at[datos.autismo$factor=="Autism"], xlab = "Cuantiles teoricos", ylab = "Ejemplos de cuantiles",main = "Prueba de normalidad de Autism");qqline(datos.autismo$x.232674_at[datos.autismo$factor=="Autism"],col=2)
+```
+
+```{r}
+o=par(mfrow=c(1,2))
+#gen x.235889_at
+qqnorm(datos.autismo$x.235889_at[datos.autismo$factor=="Control"], xlab = "Cuantiles teoricos", ylab = "Ejemplos de cuantiles",main = "Prueba de normalidad de Control");qqline(datos.autismo$x.235889_at[datos.autismo$factor=="Control"],col=2) 
+qqnorm(datos.autismo$x.235889_at[datos.autismo$factor=="Autism"], xlab = "Cuantiles teoricos", ylab = "Ejemplos de cuantiles",main = "Prueba de normalidad de Autism");qqline(datos.autismo$x.235889_at[datos.autismo$factor=="Autism"],col=2)
+```
+
+```{r}
+o=par(mfrow=c(1,2))
+#gen x.1553235_at
+qqnorm(datos.autismo$x.1553235_at[datos.autismo$factor=="Control"], xlab = "Cuantiles teoricos", ylab = "Ejemplos de cuantiles",main = "Prueba de normalidad de Control");qqline(datos.autismo$x.1553235_at[datos.autismo$factor=="Control"],col=2) 
+qqnorm(datos.autismo$x.1553235_at[datos.autismo$factor=="Autism"], xlab = "Cuantiles teoricos", ylab = "Ejemplos de cuantiles",main = "Prueba de normalidad de Autism");qqline(datos.autismo$x.1553235_at[datos.autismo$factor=="Autism"],col=2)
+```
+
+```{r}
+o=par(mfrow=c(1,2))
+#gen x.244494_at
+qqnorm(datos.autismo$x.244494_at[datos.autismo$factor=="Control"], xlab = "Cuantiles teoricos", ylab = "Ejemplos de cuantiles",main = "Prueba de normalidad de Control");qqline(datos.autismo$x.244494_at[datos.autismo$factor=="Control"],col=2) 
+qqnorm(datos.autismo$x.244494_at[datos.autismo$factor=="Autism"], xlab = "Cuantiles teoricos", ylab = "Ejemplos de cuantiles",main = "Prueba de normalidad de Autism");qqline(datos.autismo$x.244494_at[datos.autismo$factor=="Autism"],col=2)
+```
+
+```{r}
+o=par(mfrow=c(1,2))
+#gen x.233835_at
+qqnorm(datos.autismo$x.233835_at[datos.autismo$factor=="Control"], xlab = "Cuantiles teoricos", ylab = "Ejemplos de cuantiles",main = "Prueba de normalidad de Control");qqline(datos.autismo$x.233835_at[datos.autismo$factor=="Control"],col=2) 
+qqnorm(datos.autismo$x.233835_at[datos.autismo$factor=="Autism"], xlab = "Cuantiles teoricos", ylab = "Ejemplos de cuantiles",main = "Prueba de normalidad de Autism");qqline(datos.autismo$x.233835_at[datos.autismo$factor=="Autism"],col=2)
+```
+
+```{r}
+o=par(mfrow=c(1,2))
+#gen x.242767_at
+qqnorm(datos.autismo$x.242767_at[datos.autismo$factor=="Control"], xlab = "Cuantiles teoricos", ylab = "Ejemplos de cuantiles",main = "Prueba de normalidad de Control");qqline(datos.autismo$x.242767_at[datos.autismo$factor=="Control"],col=2) 
+qqnorm(datos.autismo$x.242767_at[datos.autismo$factor=="Autism"], xlab = "Cuantiles teoricos", ylab = "Ejemplos de cuantiles",main = "Prueba de normalidad de Autism");qqline(datos.autismo$x.242767_at[datos.autismo$factor=="Autism"],col=2)
+```
+
+```{r}
+o=par(mfrow=c(1,2))
+#gen x.1552734_at
+qqnorm(datos.autismo$x.1552734_at[datos.autismo$factor=="Control"], xlab = "Cuantiles teoricos", ylab = "Ejemplos de cuantiles",main = "Prueba de normalidad de Control");qqline(datos.autismo$x.1552734_at[datos.autismo$factor=="Control"],col=2) 
+qqnorm(datos.autismo$x.1552734_at[datos.autismo$factor=="Autism"], xlab = "Cuantiles teoricos", ylab = "Ejemplos de cuantiles",main = "Prueba de normalidad de Autism");qqline(datos.autismo$x.1552734_at[datos.autismo$factor=="Autism"],col=2)
+```
+
+```{r}
+o=par(mfrow=c(1,2))
+#gen x.242980_at
+qqnorm(datos.autismo$x.242980_at[datos.autismo$factor=="Control"], xlab = "Cuantiles teoricos", ylab = "Ejemplos de cuantiles",main = "Prueba de normalidad de Control");qqline(datos.autismo$x.242980_at[datos.autismo$factor=="Control"],col=2) 
+qqnorm(datos.autismo$x.242980_at[datos.autismo$factor=="Autism"], xlab = "Cuantiles teoricos", ylab = "Ejemplos de cuantiles",main = "Prueba de normalidad de Autism");qqline(datos.autismo$x.242980_at[datos.autismo$factor=="Autism"],col=2)
+```
+
+*Interpretación*
+
+Podemos apreciar en la gran mayoría de las gráficas que los datos parecen ajustarse a una distribución normal en mayor o menor medida. Para contrastar esto debemos acudir a los test correspondientes que midan esta tendencia para asumir dicha distribución.
+
+
+**C. Contrasta la igualdad de medias de los valores de expresión para cada gen
+entre individuos autistas y de control. Interpreta los resultados. Explica tu
+consideración sobre la adecuación de la prueba paramétrica aplicada. Indica
+justificadamente qué genes se expresan diferencialmente**
+
+```{r}
+summary(datos.autismo$factor)
+```
+
+En nuestro caso, tenemos un tamaño de muestra ligeramente superior a 50.
+No usaremos test de Shapiro-Wilks (adecuado para n<50) y usaremos Kolmogorov-Smirnov.
+Este test, contrasta la hipotesis nula de que el conjunto se ajusta a una normal, si la rechazamos asuminos que el conjunto de datos no se ajusta a una distribución normal.
+
+```{r}
+library(nortest)
+#gen x.205486_at
+ks.test(datos.autismo$x.205486_at,pnorm,mean(datos.autismo$x.205486_at),sd(datos.autismo$x.205486_at))
+```
+El conjunto de datos de la variable se ajusta a una D.normal (p>0.05)
+
+```{r}
+#gen x.234972_at 
+ks.test(datos.autismo$x.234972_at,pnorm,mean(datos.autismo$x.234972_at),sd(datos.autismo$x.234972_at))
+```
+
+El conjunto de datos de la variable se ajusta a una D.normal (p>0.05)
+
+```{r}
+#gen x.212848_s_at
+ks.test(datos.autismo$x.212848_s_at,pnorm,mean(datos.autismo$x.212848_s_at),sd(datos.autismo$x.212848_s_at))
+```
+
+El conjunto de datos de la variable se ajusta a una D.normal (p>0.05)
+
+```{r}
+#gen x.232674_at
+ks.test(datos.autismo$x.232674_at,pnorm,mean(datos.autismo$x.232674_at),sd(datos.autismo$x.232674_at))
+```
+
+El conjunto de datos de la variable se ajusta a una D.normal (p>0.05)
+
+```{r}
+#gen x.235889_at
+ks.test(datos.autismo$x.235889_at,pnorm,mean(datos.autismo$x.235889_at),sd(datos.autismo$x.235889_at))
+```
+
+El conjunto de datos de la variable se ajusta a una D.normal (p>0.05)
+
+```{r}
+#gen x.1553235_at
+ks.test(datos.autismo$x.1553235_at,pnorm,mean(datos.autismo$x.1553235_at),sd(datos.autismo$x.1553235_at))
+```
+
+El conjunto de datos de la variable se ajusta a una D.normal (p>0.05)
+
+```{r}
+#gen x.244494_at
+ks.test(datos.autismo$x.244494_at,pnorm,mean(datos.autismo$x.244494_at),sd(datos.autismo$x.244494_at))
+```
+
+El conjunto de datos de la variable se ajusta a una D.normal (p>0.05)
+
+```{r}
+#gen x.233835_at
+ks.test(datos.autismo$x.233835_at,pnorm,mean(datos.autismo$x.233835_at),sd(datos.autismo$x.233835_at))
+```
+
+El conjunto de datos de la variable se ajusta a una D.normal (p>0.05)
+
+```{r}
+#gen x.242767_at
+ks.test(datos.autismo$x.242767_at,pnorm,mean(datos.autismo$x.242767_at),sd(datos.autismo$x.242767_at))
+```
+
+El conjunto de datos de la variable se ajusta a una D.normal (p>0.05)
+
+```{r}
+#gen x.1552734_at
+ks.test(datos.autismo$x.1552734_at,pnorm,mean(datos.autismo$x.1552734_at),sd(datos.autismo$x.1552734_at))
+```
+
+El conjunto de datos de la variable **NO** se ajusta a una D.normal (p<0.05)
+
+```{r}
+#gen x.242980_at
+ks.test(datos.autismo$x.242980_at,pnorm,mean(datos.autismo$x.242980_at),sd(datos.autismo$x.242980_at))
+```
+
+El conjunto de datos de la variable se ajusta a una D.normal (p>0.05)
+
+CONTRASTE DE IGUALDAD DE MEDIAS(D.NORMAL) O DE MEDIANAS(D. NO NORMAL).
+
+En este caso, el test elegido para contrastar las medias será Prueba de Student (t.test).
+
+Adecuada, ya que quiero comparar la igualdad entre dos medias de muestras independientes (control y Autism).
+Para ello, primero realizo test de varianzas ya que tengo que declarar en t.test como son (significativamente similares o distintas).
+
+```{r}
+#gen x.205486_at -> D.normal (Contraste de medias)
+var.test(datos.autismo$x.205486_at~datos.autismo$factor)
+```
+
+p.value>0.05 -> no rechazo H0 -> no hay evidencia de diferencias significativas -> varianzas similares.
+
+```{r}
+t.test(datos.autismo$x.205486_at~ datos.autismo$factor,var.equal=T)
+```
+
+p.value<0.05 -> rechazamos hipotesis nula de que las medias son iguales -> gen se expresa diferencialmente entre clases (medias distintas).
+
+```{r}
+#gen x.234972_at -> D.normal (Contraste de medias)
+var.test(datos.autismo$x.234972_at~datos.autismo$factor)
+```
+
+p.value>0.05 -> no rechazo H0 -> no hay evidencia de diferencias significativas -> varianzas similares
+```{r}
+t.test(datos.autismo$x.234972_at~ datos.autismo$factor,var.equal=T)
+```
+
+p.value<0.05 -> rechazamos hipotesis nula de que las medias son iguales -> gen se expresa diferencialmente entre clases (medias distintas).
+
+```{r}
+#gen x.212848_s_at -> D.normal (Contraste de medias)
+var.test(datos.autismo$x.212848_s_at~datos.autismo$factor)
+```
+
+p.value>0.05 -> no rechazo H0 -> no hay evidencia de diferencias significativas -> varianzas similares.
+
+```{r}
+t.test(datos.autismo$x.212848_s_at~ datos.autismo$factor,var.equal=T)
+```
+
+p.value<0.05 -> rechazamos hipotesis nula de que las medias son iguales -> gen se expresa diferencialmente entre clases (medias distintas).
+
+```{r}
+#gen x.232674_at -> D.normal (Contraste de medias)
+var.test(datos.autismo$x.232674_at~datos.autismo$factor)
+```
+
+p.value>0.05 -> no rechazo H0 -> no hay evidencia de diferencias significativas -> varianzas similares.
+
+```{r}
+t.test(datos.autismo$x.232674_at~ datos.autismo$factor,var.equal=T)
+```
+
+p.value<0.05 -> rechazamos hipotesis nula de que las medias son iguales -> gen se expresa diferencialmente entre clases (medias distintas).
+
+```{r}
+#gen x.235889_at -> D.normal (Contraste de medias)
+var.test(datos.autismo$x.235889_at~datos.autismo$factor)
+```
+
+p.value<0.05 -> rechazo H0 , hay diferencias significativas entre varianzas.
+En este caso hacemos test de Welch al declarar varianzas distintas -> p<0.05 -> rechazo H0
+
+```{r}
+t.test(datos.autismo$x.235889_at~ datos.autismo$factor,var.equal=F)
+```
+
+Gen se expresa diferencialmente entre clases (medias distintas).
+
+```{r}
+#gen x.1553235_at -> D.normal (Contraste de medias)
+var.test(datos.autismo$x.1553235_at~datos.autismo$factor)
+```
+
+p.value<0.05 -> rechazo H0 , hay diferencias significativas entre varianzas.
+En este caso hacemos test de Welch al declarar varianzas distintas -> p<0.05 -> rechazo H0
+
+```{r}
+t.test(datos.autismo$x.1553235_at~ datos.autismo$factor,var.equal=F)
+```
+
+
+Gen se expresa diferencialmente entre clases (medias distintas).
+
+```{r}
+#gen x.244494_at -> D.normal (Contraste de medias)
+var.test(datos.autismo$x.244494_at~datos.autismo$factor)
+```
+
+p.value>0.05 -> no rechazo H0 -> no hay evidencia de diferencias significativas -> varianzas similares
+
+```{r}
+t.test(datos.autismo$x.244494_at~ datos.autismo$factor,var.equal=T)
+```
+
+p.value<0.05 -> rechazamos hipotesis nula de que las medias son iguales -> gen se expresa diferencialmente entre clases (medias distintas).
+
+```{r}
+#gen x.233835_at -> D.normal (Contraste de medias)
+var.test(datos.autismo$x.233835_at~datos.autismo$factor)
+```
+
+p.value>0.05 -> no rechazo H0 -> no hay evidencia de diferencias significativas -> varianzas similares.
+
+```{r}
+t.test(datos.autismo$x.233835_at~ datos.autismo$factor,var.equal=T)
+```
+
+p.value<0.05 -> rechazamos hipotesis nula de que las medias son iguales -> gen se expresa diferencialmente entre clases (medias distintas).
+
+```{r}
+#gen x.242767_at -> D.normal (Contraste de medias)
+var.test(datos.autismo$x.242767_at~datos.autismo$factor)
+```
+
+p.value<0.05 -> rechazo H0 , hay diferencias significativas entre varianzas.
+En este caso hacemos test de Welch al declarar varianzas distintas -> p<0.05 -> rechazo H0
+
+```{r}
+t.test(datos.autismo$x.242767_at~ datos.autismo$factor,var.equal=F)
+```
+
+gen se expresa diferencialmente entre clases (medias distintas).
+
+
+En este caso, usaremos Test de Wilcoxon -> equivalente a t-student --> comprobacion de medianas de muestras independientes si tienen diferencias significativas
+```{r}
+#gen x.1552734_at -> D. NO normal (Contraste de medianas)
+wilcox.test(datos.autismo$x.1552734_at~datos.autismo$factor)
+```
+
+En este caso tenemos el valor del estadistico W, que cuando esta situado en una de las colas inferior o superior de la distribución, puede sugerir evidencia "en contra" de la hipotesis nula.
+Además, tenemos un p.value<0.05 -> rechazamos por tanto H0 de que son iguales las medianas. Asumimos por tanto, Gen expresado diferencialmente.
+
+```{r}
+#gen x.242980_at -> D.normal (Contraste de medias)
+var.test(datos.autismo$x.242980_at~datos.autismo$factor)
+```
+
+p.value>0.05 -> no rechazo H0 -> no hay evidencia de diferencias significativas -> varianzas similares
+
+```{r}
+t.test(datos.autismo$x.242980_at~ datos.autismo$factor,var.equal=T)
+```
+
+Gen se expresa diferencialmente entre clases (medias distintas).
+
+
+## 2. Realiza un Análisis de Componentes Principales.
+
+**Se sugiere el estudio de idoneidad del ACP, variabilidad de cada una de las componentes
+principales, determinación del número adecuado de componentes principales, la expresión
+de las componentes extraídas y su interpretación.**
+
+Primer paso -> calcular la matriz de correlaciones
+
+```{r}
+round(cor(datos.autismo[,1:11]),2)
+library("corrr")
+cor.autismo <- correlate(datos.autismo[,1:11])
+network_plot(cor.autismo)
+```
+
+Representamos la matriz de correlaciones como una red, donde se aprecia la correlación entre las variables iniciales.
+
+```{r}
+library(corrplot)
+cor.autismo=cor(datos.autismo[,-12])
+corrplot.mixed(cor.autismo, lower.col = 1)
+```
+
+Visualizamos la matriz de correlacion resaltando por colores valores y posiciones.
+
+Test de esfericidad de Barlett (contraste de idoneidad de PCA)
+
+```{r}
+library("psych")
+cortest.bartlett(cor(datos.autismo[,1:11]), n = 124)
+library("REdaS")
+bart_spher(datos.autismo[,1:11])
+```
+
+En este caso, p.value<0.05 por lo que rechazamos H0 de que la matriz de correlación es igual a la matriz identidad, por lo que las variables están correlacionadas y es idoneo realizar PCA.
+
+No obstante, nos apoyaremos en el test KMO y KMOS para confirmarlo.
+
+```{r}
+KMO(datos.autismo[,1:11])
+KMOS(datos.autismo[,1:11]) 
+```
+
+Observamos KMO alto -> valor MSA mayor de 0.5 indicativo de PCA idóneo -> pasamos barlett y KMO -> ADECUADO PCA. 
+
+```{r}
+library(FactoMineR)
+o=par(mfrow=c(1,2))
+autismo.pca <- PCA(datos.autismo, scale.unit=T, ncp=11, quali.sup = 12, graph=T, axes = c(1, 2))
+```
+
+*Interpretación*
+
+En el primer gráfico, vemos como se distribuyen los individuos observados en la primera y segunda dimensión.
+En el segundo gráfico, vemos que cuanto menor sea el ángulo que forma la proyección de cada variable (flecha) sobre el eje de cada componente, mas próximo será a la componente y la caracteriza más a esa componente la variable(más peso tiene en esa componente).
+Siempre se representa de dos en dos dimensiones, componentes dos a dos y las voy analizando así (en la opción axes puedemos cambiar y ver todas las dimensiones).
+
+En este caso, la que mayor carga posee es 232674_at ya que esta mas próximo al eje de la primera componente (correlacion positiva). Aunque en terminos numéricos el valor de contribución de la variable 244494_at sea mas alto, se distancia mas del eje que 232674_at porque contribuye un poco más a la segunda componente. 
+
+Las variables que presenten un angulo de 45% en el eje de 90% entre dos componentes, significa que esta a mitad del cuadrante, 45 y 45, no tiene mayor carga factorial ni en una ni en otra, por lo que tendra mas carga en otras componenentes.
+Y así ocurre si miramos la contribución de estas variables en la componente 11.
+
+Por otro lado, si cambiamos axes y analizamos la contribucion numérica de la segunda y tercera vemos como variables con mas carga 234972_at en la CP 2 (correlacion negativa) y 212848_s_at en CP 3 (correlacion negativa bajita para la CP 2 y positiva alta para CP 3).
+Del mismo modo para las CP 4, 5 y 6 tendriamos otras variables que contribuyen destacadamente junto con las comentadas en algunas CP.
+
+
+
+
+```{r}
+summary(autismo.pca)
+```
+
+
+En este caso, vemos un resumen de la función PCA. Varianza en orden descendente de cada dimensión, varianza de casi 3.4 indica que la varianza (información) esta retenida por casi 3.5 variables y la segunda por poco mas de 1 aprox y el resto por 1 o menos de 1.
+El porcentaje varianza acumulada indica que: la primera casi un 40% , de la primera a la segunda 42.5% aprox, es decir, aumenta casi un 13% (es considerable) y luego dimension tras dimension hasta la dimension 6 varía en torno a un 10% en cada paso (a considerar).
+En el resumen también tenemos valores de los 10 primeros individuos y como estan caracterizados por cada CP.
+
+**ANALISIS DE EXPRESION DE LAS COMPONENTES EXTRAIDAS E INTERPRETACION**
+
+Para ello, podemos seguir el criterio de Kaiser, donde seleccionaremos todas aquellas dimensiones que superen una varianza de 1 o bien seleccionar aquellas que reunan en torno a un 80% de varianza acumulativa.
+No obstante, para reforzar este criterio vamos a realizar un método de seleccion de componentes.
+
+```{r}
+library(nFactors)
+ap <- parallel(subject=nrow(datos.autismo[,1:11]),var=ncol(datos.autismo[,1:11]),rep=100,cent=.95)
+nS <- nScree(ev$values,ap$eigen$qevpea)
+vp <- min(nS$Components)+1;
+vp
+
+```
+
+Este método determina el número de componentes principales a retener como el mínimo de los componentes según el método de Scree más 1. Este paso es comúnmente utilizado para evitar subestimar la cantidad de componentes.
+Por tanto, debemos extraer como mínimo las 2 primeras componentes, pero seleccionamos hasta la cuarta reteniendo un 62% de información total aproximadamente, ya que a partir de aqui las siguientes dimensiones retienen un valor de varianza inferior a 1.
+
+
+```{r}
+autismo.comp=autismo.pca$ind$coord[,1:4]
+```
+
+Visualización de la correlación entre variables.
+
+```{r}
+library(factoextra)
+library(ggplot2)
+
+fviz_pca_var(autismo.pca, col.var = "cos2",
+             addlabels = TRUE,
+             geom.var = "arrow", 
+             labelsize = 2, 
+             repel = TRUE)
+```
+
+Podemos ver en este caso las variables (representadas por su vector cos2) que estan correlacionadas positivamente en cada dimensión (juntas en el mismo cuadrante). Tambien las variables que se correlacionan negativamente en cada dimensión (apuntando al cuadrante opuesto).
+
+Visualización del procentaje de varianza explicacada en cada dimension o componente.
+
+```{r}
+fviz_screeplot(autismo.pca, addlabels = TRUE, ylim = c(0, 75))
+```
+
+## 3. Representa conjuntamente las expresiones génicas (variables) y los individuos de la muestra (observaciones). Interpreta la nube de puntos.
+
+```{r}
+biplot(autismo.pca$ind$coord[,1:2],autismo.pca$var$coord[,1:2],xlim=c(-4,4), cex = 0.7)
+biplot <- fviz_pca_biplot(autismo.pca, axes = c(1, 2), habillage = datos.autismo$factor, addEllipses = TRUE)
+biplot
+```
+
+*Interpretación*
+
+Los individuos que están en el origen no estan afectadas por ninguna componente --> todas las variables cerca o en la media. Ejemplos: individuos 7, 72 y 61. 
+En contraste, los individuos que se situan cerca o sobre la proyección de cada variable sobre las componentes (en esta grafica en concreto dimensiones 1 y 2) serán aquellos que contribuyan más a la retención de varianza por parte de dicha variable.
+Por otro lado, los mas alejados del centro del eje y de la proyeccion de variables serán considerados valores outliers.
+Por último, comentar que la presencia de elipses pone de manifiesto visual el gran solapamiento que existe entre ambas clases o grupos(variable factor) de nuestro conjunto.
+Este solapamiento se observa en todas las dimensiones (cambiando axes en la función).
+
+
+## 4. Determinación del número óptimo de conglomerados o clases
+
+
+**A. Realiza un análisis jerárquico de clasificación no supervisado y encuentra
+la estrategia de enlace óptima. Obtén y comenta el correspondiente
+dendrograma. Incluye distintas estrategias de enlace, la comparación y la
+justificación de la elección.**
+
+
+Creamos la matriz de proximidad-distancia.
+```{r}
+
+dist.autismo <- dist(autismo.comp)
+
+```
+
+**Vamos haciendo los diferentes metodos de enlace.**
+
+Método de enlace simple (vecino mas cercano)
+
+```{r}
+autismo.single <-  hclust(dist.autismo, method = "single")
+par(mfrow=c(1,2))
+plot(autismo.single, ylab = "distancia", cex=0.6)
+plot(autismo.single, ylab ="dist", hang=-1, cex=0.6)
+
+```
+
+Método de enlace completo (vecino mas lejano)
+
+```{r}
+autismo.complete <- hclust(dist.autismo, method = "complete")
+par(mfrow=c(1,2))
+plot(autismo.complete, ylab = "distancia", cex=0.6)
+plot(autismo.complete, ylab ="dist", hang=-1, cex=0.6)
+```
+
+Método del centroide
+
+```{r}
+autismo.centroid <- hclust(dist.autismo, method = "centroid")
+par(mfrow=c(1,2))
+plot(autismo.centroid, ylab = "distancia", cex=0.6)
+plot(autismo.centroid, ylab ="dist", hang=-1, cex=0.6)
+```
+
+Método de ward
+
+```{r}
+autismo.ward <- hclust(dist.autismo, method = "ward")
+par(mfrow=c(1,2))
+plot(autismo.ward, ylab = "distancia", cex=0.6)
+plot(autismo.ward, ylab ="dist", hang=-1, cex=0.6)
+```
+
+Método promedio 
+
+```{r}
+autismo.average <- hclust(dist.autismo, method = "average")
+par(mfrow=c(1,2))
+plot(autismo.average, ylab = "distancia", cex=0.6)
+plot(autismo.average, ylab ="dist", hang=-1, cex=0.6)
+```
+
+Evaluacion cofonetico del mejor metodo de enlace.
+
+```{r}
+sing=cor(dist.autismo,cophenetic(autismo.single))
+comp=cor(dist.autismo,cophenetic(autismo.complete))
+cent=cor(dist.autismo,cophenetic(autismo.centroid))
+avg=cor(dist.autismo,cophenetic(autismo.average))
+ward=cor(dist.autismo,cophenetic(autismo.ward))
+best=data.frame(sing,comp,cent,avg,ward)
+round(best,2)
+```
+
+El más adecuado será el que mayor valor tenga (en este caso, metodo promedio).
+No obstante, los valores son similares entre si por lo que recurrimos a tanglegrama para enfrentar dendogramas que puedan ser a priori adecuados.
+
+
+```{r}
+library(dendextend)
+tanglegram(autismo.average,autismo.ward, highlight_distinct_edges = TRUE,
+           common_subtrees_color_branches = TRUE)
+```
+
+*Interpretación*
+
+Comparamos dendogramas con el tanglegrama, los enfrentamos entre sí.
+En nuestro caso, el que mejor coeficiente cofonetico tiene es el metodo de enlace promedio, aunque visualmente pueda parecer que posee una mejor representación el metodo de ward ya que se aprecian las ramas más diferenciadas.
+En un tanglegram, las líneas más gruesas sugieren una mayor similitud entre las estructuras de agrupamiento, mientras que las líneas más delgadas o la ausencia de líneas indican diferencias en las agrupaciones.
+Por lo tanto, aunque ambos metodos me hacen la partición de clusters a la misma distancia, las lineas del metodo de enlace promedio son mas gruesas entre clusters por lo que habra mas similitud entre individuos, dentro del mismo cluster.
+
+TENIENDO ESTO EN CUENTA Y QUE EL COEFICIENTE COFONETICO ES MAYOR -> ELEGIMOS METODO PROMEDIO DE ENLACE.
+
+
+
+**B. Determina el número de conglomerados adecuado.**
+
+```{r}
+autismo.hcpc <- HCPC(as.data.frame(autismo.comp), nb.clust = -1, method = "average")
+```
+
+Las componentes han de ser independientes de ahi lo de incluir el pca antes.
+Las componentes principales son ortogonales entre sí, lo que significa que son linealmente independientes y no están correlacionadas.
+Podemos observar, que individuos son incluidos en cada cluster y el respectivo dendograma sobre la sobre la nube de puntos.
+Extraemos un k de 3, es decir, 3 congloromedas adecuados. 
+Es valor será el que incluiremos en el algoritmo k-means -> CLUSTERING NO JERÁRQUICO
+
+**C. Obtén el número de individuos y de qué grupo están incluidos en cada
+uno de los conglomerados obtenidos.**
+
+A continuación, vamos a obtener a visualizar la posicion de fila de cada observación de datos.autismo, es decir, los individuos que pertencen a cada cluster y seguidamente a que grupo pertenecen cada unos de ellos.
+
+```{r}
+autismo.clust <- lapply(1:3, function(nc) datos.autismo$factor[autismo.hcpc$data.clust$clust==nc])
+autismo.clust
+```
+
+```{r}
+autismo.clust2 <- lapply(1:3, function(nc) row.names(datos.autismo)[autismo.hcpc$data.clust$clust==nc])
+autismo.clust2
+```
+
+Extraemos que, el primer cluster recoge mayoritariamente a organismos control, el segundo está formado por mas o menos la misma proporcion de control y de autistas
+El tercero, predominan autistas. 
+Esto concuerda con el solapamiento visto en el PCA respecto a los grupos Control y Autismo.
+
+
+```{r}
+asignacion_clusters_hcpc <- autismo.hcpc$data.clust$clust
+table(datos.autismo$factor, asignacion_clusters_hcpc)
+
+```
+
+Finalmente, aqui se ve una forma mas resumida como se distribuyen los individuos en cada cluster y el grupo al que pertenecen.
+
+A continuación, veremos un heatmap de expresion genética donde relacionaremos individuos y genes.
+
+```{r}
+library(gplots)
+library(RColorBrewer)
+heatmap.2(as.matrix(datos.autismo[,1:11]),
+          scale="none",
+          density.info="histogram",
+          trace= "none",
+          labRow = datos.autismo$factor, 
+          margins=c(12,7), main = "HeatMap perfiles genéticos", 
+          cex.axis=1.0, 
+          cex.main=.6)
+```
+
+*Interpretación*
+
+Vemos dendogramas de individuos (izquierda) y de genes(arriba) enfrentados con sus respectivos valores de expresión representados por diferentes colores en una matriz de expresión que a su derecha viene indicado el grupo al que pertenece cada individuo.
+Podemos extraer poca información de esta representación ya que no hay una gran diferencia de expresión entre grupos en los genes. Si podemos destacar que al igual que podemos ver en los valores del data frame, los genes 234972_at y 205486_at comparten valores similares de expresión (altos valores amarillo), la variable 212848_s_at presenta valores mas bajos (naranja) pero son mas altos que los valores del resto de variables que mantienen unos valores similares (rojo).
+
+
+
+## 5. Realiza un análisis clúster no jerárquico de los individuos. Interpreta los resultados.
+
+Cluster no jerarquico: k-means con k=3
+
+```{r}
+set.seed(123); km <- kmeans(autismo.comp,3)
+km
+```
+
+*Interpretación*
+
+Las medias de los conglomerados proporcionan información sobre los valores medios de cada dimensión dentro de cada conglomerado. Los valores WCSS dan una idea del grado de agrupación de los puntos dentro de cada grupo.
+El porcentaje de variabilidad explicada indica en qué medida los conglomerados captan 
+la variabilidad global de los datos (44.7%, es un valor relativamente bajo).
+En general, un WCSS más bajo y un mayor porcentaje de variabilidad explicada sugieren 
+un mejor ajuste de los conglomerados a los datos.
+
+```{r}
+autismo.km <- lapply(1:3, function(nc) row.names(datos.autismo)[km$cluster==nc])
+autismo.km
+autismo.km2 <- lapply(1:3, function(nc) datos.autismo$factor[km$cluster==nc])
+autismo.km2
+```
+
+Vemos a que cluster pertenece cada observacion y de que grupo(clase) es y se organizan de forma similar a como ocurría en el clustering jerarquico.
+
+VISUALIZACIÓN DE LA NUBE DE PUNTOS CLUSTER K-MEANS.
+
+```{r}
+fviz_cluster(object = km, data = autismo.comp,
+             ellipse.type = "norm", geom = "point", main = "Datos autismo",
+             stand = FALSE, palette = "jco") +
+  theme_bw() + theme(legend.position = "none")
+```
+
+
+Debido a que el algoritmo de K-means no evalúa todas las posibles distribuciones 
+de las observaciones sino solo parte de ellas, los resultados obtenidos dependen de 
+la asignación aleatoria inicial (paso 1). 
+Por esta razón, es importante ejecutar el algoritmo varias veces, cada una con una asignación aleatoria inicial distinta, y seleccionar aquella que haya conseguido un menor valor de varianza total (WCSS por cluster).
+
+```{r}
+set.seed(1234); km.changeseed1 <- kmeans(autismo.comp,3)
+km.changeseed1$withinss
+
+```
+
+```{r}
+set.seed(12345); km.changeseed2 <- kmeans(autismo.comp,3)
+km.changeseed2$withinss
+```
+
+```{r}
+set.seed(456); km.changeseed3 <- kmeans(autismo.comp,3)
+km.changeseed3$withinss
+```
+
+```{r}
+set.seed(9876); km.changeseed4 <- kmeans(autismo.comp,3)
+km.changeseed4$withinss
+```
+
+Además, cambiamos también el número de iteraciones mínimas para aumentar la estabilidad del resultado junto con los cambios de semilla de aleatorizacón.
+
+```{r}
+km.changeiter <- kmeans(autismo.comp, centers=3, iter.max=100, nstart=25)
+km.changeiter$withinss
+
+```
+
+
+```{r}
+km.changeiter2 <- kmeans(autismo.comp, centers=3, iter.max=1000, nstart=150)
+km.changeiter2
+```
+
+```{r}
+km.changeiter3 <- kmeans(autismo.comp, centers=3, iter.max=500, nstart=50)
+km.changeiter3
+```
+
+En nuestro caso, cuando cambiamos la semilla de aleatorizacion y el número mínimo de iteraciones, no se aprecia un cambio significativo en la varianza total interna entre cluster ni en el porcentaje de variabilidad explicada total en el k-means.
+
+**A. ¿Cuántos individuo y de qué grupo están incluidos en cada uno de los
+conglomerados? Compara estos resultados con los del apartado 4.c.**
+
+```{r}
+asignacion_clusters_hcpc <- autismo.hcpc$data.clust$clust
+table(datos.autismo$factor, asignacion_clusters_hcpc)
+```
+
+```{r}
+asignacion_clusters_kmeans <- km$cluster
+table(datos.autismo$factor, asignacion_clusters_kmeans)
+```
+
+*Interpretación y comparación*
+
+Cuando comparamos clustering jerarquico y no jerarquico, vemos que la distribucion y partición entre cluster es prácticamente igual, tanto entre clases como en número.
+Por tanto, viendo que ambos tipos de clustering dan un resultado similar y estable podríamos pensar que el número de clusters es adecuado.
+
+No obstante, si cambiamos el numero de centroides(k), aumenta el pocentaje de variabilidad explicada y el WCSS en cada cluster y aunque es cierto que al aumentar k es mas probable capturar patrones específicos del ruido en lugar de patrones reales en los datos, hace que me cuestione si el número de centroides 3 es óptimo.
+
+Ejemplo cambio k=4
+
+```{r}
+set.seed(123);km.changek1 <- kmeans(autismo.comp, centers=4)
+km.changek1
+asignacion_clusters_kmeanschange1 <- km.changek1$cluster
+table(datos.autismo$factor, asignacion_clusters_kmeanschange1)
+```
+
+
+Los métodos de clustering son capaces de encontrar agrupaciones en cualquier set de datos, independientemente de que realmente existan o no dichos grupos en la población de la que proceden las observaciones.
+
+Además, aunque no sucede en nuestro caso, cada uno de los métodos de clustering podría dar lugar a resultados distintos. 
+
+Deberemos validar los clusters evaluando la veracidad de los grupos obtenidos. 
+
+A modo general, este proceso consta de tres partes: estudio de la tendencia de clustering, elección del número óptimo de clusters y estudio de la calidad/significancia de los clusters generados.
+
+
+**Elección del número óptimo de clusters**
+
+```{r}
+library(factoextra)
+library(NbClust)
+fviz_nbclust(x = autismo.comp, FUNcluster = kmeans, method = "wss", k.max = 10) +
+  labs(title = "Número óptimo de clusters")
+```
+
+El método Elbow calcula la varianza total intra-cluster en función del número de clusters y escoge como óptimo aquel valor a partir del cual añadir más clusters apenas consigue mejoría. 
+En nuestro caso, no para de disminuir (y por tanto de mejorar) conforme aumentamos k, pudiendo desarrollar problemas de sobreajuste del modelo. No podemos tomar una decisión en base a este índice.
+
+```{r}
+library(factoextra)
+library(NbClust)
+fviz_nbclust(x = autismo.comp, FUNcluster = kmeans, method = "silhouette", k.max = 10) +
+  labs(title = "Número óptimo de clusters")
+```
+
+El método de average silhouette considera como número óptimo de clusters aquel que maximiza la media del silhouette coeficient de todas las observaciones, en este caso 2.
+
+
+
+```{r}
+library(factoextra)
+set.seed(896)
+library(NbClust)
+fviz_nbclust(x = autismo.comp, FUNcluster = kmeans, method = "gap_stat", nboot = 500,
+             k.max = 10, verbose = FALSE, nstart = 25) +
+  labs(title = "Número óptimo de clusters")
+```
+
+El estadístico gap compara, para diferentes valores de k, la varianza total intra-cluster observada frente al valor esperado acorde a una distribución uniforme de referencia.
+En este caso, el estadistico gap nos indica que agrupar los individuos en un solo cluster nos aleja de una distribución uniforme aleatoria.
+
+
+Estos 3 estadisticos no tiene por que coincidir y por esa razon resulta óptimo, realizar todos antes de tomar una decisión, de hecho es posible calcular todos los índices de la función NbClust() del paquete NbClust. Esta incorpora 30 índices distintos, dando la posibilidad de calcularlos todos en un único paso.
+
+```{r}
+library(factoextra)
+install.packages("NbClust")
+library(NbClust)
+numero_clusters <- NbClust(data = autismo.comp, distance = "euclidean", min.nc = 2,
+                           max.nc = 10, method = "kmeans", index = "alllong")
+```
+
+
+Teniendo en cuenta el algoritmo k-means y el resumen de estos indices el número optimo de clusters será 2, aunque se maximiza la varianza total intra-cluster y tiene un % de variabilidad explicada menor que k=3 o k=4.
+
+**Estudio de la calidad/significancia de los clusters generados.**
+
+Una vez seleccionado el número adecuado de clusters y aplicado el algoritmo de clustering pertinente se tiene que evaluar la calidad de los de los mismos, de lo contrario, podrían derivarse conclusiones de agrupación que no se corresponden con la realidad.
+
+Silhouette width
+
+```{r}
+library(factoextra)
+km_clusters <- eclust(x = autismo.comp, FUNcluster = "kmeans", k = 2, seed = 123,
+                      hc_metric = "euclidean", nstart = 25, graph = FALSE)
+fviz_silhouette(sil.obj = km_clusters, print.summary = TRUE, palette = "jco",
+                ggtheme = theme_classic())
+```
+
+```{r}
+library(factoextra)
+km_clusters2 <- eclust(x = autismo.comp, FUNcluster = "kmeans", k = 3, seed = 123,
+                      hc_metric = "euclidean", nstart = 25, graph = FALSE)
+fviz_silhouette(sil.obj = km_clusters2, print.summary = TRUE, palette = "jco",
+                ggtheme = theme_classic())
+```
+
+Cuantifica cómo de buena es la asignación que se ha hecho de una observación comparando su similitud con el resto de observaciones del mismo cluster frente a las de los otros clusters.
+Dibuja los cluster por orden de cercanía y si el valor medio está entre 0.5 y 0.7 es una clasificación asumible y será muy buena si está en torno a 1.
+En nuestro es bastante mala la clasificación, valor de 0.29 y tendrá valores similares para k=3 y k=4.
+
+El algoritmo k-means presenta problemas de robustez frente a outliers. La única solución es excluirlos o recurrir a otros métodos de clustering más robustos como K-medoids (PAM).
+
+```{r}
+library("cluster")
+kmed <- pam(dist.autismo, k=2, diss=T)
+par(mfrow=c(1,2))
+plot(kmed,which.plots=1)
+plot(kmed)
+```
+
+En este caso, volvemos a encontrarnos con una medida de clasificación no satisfactoria, por lo que concluiremos que nuestro conjunto de datos no presenta clusters definidos como perfiles genéticos bien diferenciados.
+
+**C.Se sugiere obtener la media, mínimo y máximo de las variables para cada
+conglomerado y comenta los resultados.**
+
+Estadisticos descriptivos para cluster 1
+
+```{r}
+summary(datos.autismo[km$cluster==1,])
+```
+
+Estadisticos descriptivos para cluster 2
+
+```{r}
+summary(datos.autismo[km$cluster==2,])
+```
+
+Estadisticos descriptivos para cluster 3
+
+```{r}
+summary(datos.autismo[km$cluster==3,])
+```
+
+*Interpretación*
+
+Los resultados muestran unos valores medios, mínimos y máximos de expresion similares en todos los cluster para todas las variables, lo cual refuerza el argumento de que los grupos no están bien diferenciados.
+
+
+Por último y a modo de curiosidad, veamos si ha tenido sentido realizar clustering comparando nuestros datos con una simulacion de datos aleatorios y el metodo hopkins.
+Es decir, veamos el **estudio de la tendencia de clustering**
+
+```{r}
+library(purrr)
+datos.autismo_nofactor <- datos.autismo[,-12]
+datos_simulados <- map_df(datos.autismo_nofactor,
+                          .f = function(x){runif(n = length(x),
+                                                 min = min(x),
+                                                 max = max(x))
+                            }
+                          )
+
+datos.autismo_nofactor <-  scale(datos.autismo_nofactor)
+datos_simulados <- scale(datos_simulados)
+```
+
+
+```{r}
+library(hopkins)
+set.seed(123)
+# Estadístico H para el set de datos autismo
+hopkins(as.matrix(datos.autismo_nofactor))
+# Estadístico H para el set de datos simulado
+hopkins(as.matrix(datos_simulados))
+```
+Concluimos por tanto, que nuestros datos si que tienen tendencia a agruparse con un valor en torno a 1 (valor satisfactorio en el test hopkins) pero los grupos no son de calidad y no estan bien diferenciados según nos indican los análisis realizados.

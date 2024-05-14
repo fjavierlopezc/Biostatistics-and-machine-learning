@@ -1,0 +1,903 @@
+---
+title: "Práctica 1 - Machine Learning 2023/2024"
+author: "Francisco Javier López Carbonell"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    df_print: paged
+    highlight: kate
+    number_sections: true
+    theme: flatly
+    collapsed: yes
+    smooth_scroll: yes
+    toc: true
+    toc_float: true
+  pdf_document:
+    toc: true
+subtitle: Master en Bioinformática, Universidad de Murcia
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, root.dir =".", warning = FALSE)
+knitr::opts_chunk$set(fig.align="center",results="show")
+workingDir <- "."
+setwd(workingDir)
+solucion <- TRUE
+
+library(caret)
+library(DT)
+library(doParallel)
+registerDoParallel(cores=10)
+```
+
+Paquetes necesarios para compilar adecuadamente el Rmarkdown: "mlbench","caret", "ggplot2", "ggpubr", "gplots", "RColorBrewer", "gridExtra", "kableExtra", "kknn", "naive_bayes".    
+
+A modo de introducción, la mayoría de cuestiones planteadas serán respondidas por medio de funciones contenidas en el paquete "Caret". Como bien sabemos, se trata de un paquete especializado en herramientas que facilitan la resolución de problemas complejos de clasificación y regresión. Iremos detallando y referenciando las diversas funciones utilizadas a lo largo del presente informe.
+
+# - Dataset: BostonHousingData
+
+## - ¿Qué tamaño tiene? ¿De qué tipo son las variables?
+
+El conjunto de datos considerado tiene un tamaño de 506 filas y 14 columnas, es decir, no es un problema de alta dimensionalidad. En el dataset (rescatado del paquete "mlbench") se recogen 506 muestras con 14 carácteristicas (variables indedependientes) de distinto tipo, todas numéricas excepto una, que es una variable dummy de tipo factor (chas). La variable que se intenta predecir es de tipo numérico también (medv). Obtenemos esta información operando con la función "str()".
+
+
+```{r}
+library(mlbench)
+data("BostonHousing")
+myboston <- BostonHousing
+str(myboston)
+```
+
+## - Explica qué representan los ejemplos
+
+El problema al que nos enfrentamos, representa los datos de vivienda de 506 secciones censales de Boston a partir del censo de 1970. Este estudio proporciona un análisis y una evaluación de los factores que afectan al valor medio de las viviendas ocupadas por sus propietarios en los suburbios de Boston (medv). En concreto, el número medio de habitaciones por vivienda (rm), índice de accesibilidad a autopistas radiales (rad) o la tasa de criminalidad per cápita por ciudad (crim), entre otros. 
+
+
+## - ¿Es un problema de clasificación, regresión o cualquier otro? Explica por qué. Si fuera un problema de clasificación, ¿qué tienes que decir sobre la distribución de los ejemplos de cada clase? Si fuera de regresión, ¿qué tienes que decir de la distribución de valores de la variable dependiente?
+
+Llegados a este punto, podemos determinar a que tipo de problema nos enfrentamos.
+En primer lugar, contamos con ejemplos etiquetados, es decir, ejemplos de zonas de Boston que tendrán un determinado precio medio de vivienda (etiqueta o variable respuesta). Dicha etiqueta tendrá un valor que nosotros queremos predecir para nuevos ejemplos por medio de nuestro conjunto de variables independientes o predictores. Esta variable a predecir es de tipo continuo (valor real), es decir, la respuesta a nuestra pregunta se presenta como una cantidad que puede determinarse de una manera flexible en función de las entradas a un modelo que procede de los datos (regresión).
+
+El siguiente paso será por tanto, explorar numérica y visualmente la distribución de valores de la variable dependiente.
+
+
+```{r echo=FALSE}
+library(ggplot2)
+library(ggpubr)
+library(gplots)
+library(gridExtra)
+#prescindimos de la variable chas 
+dfboston <- myboston[,-4]
+#Estadísticos descriptivos de la variable dependiente
+summary(dfboston$medv)
+#Establecemos el diseño de la disposición de gráficos
+par(mfrow = c(2, 1))
+#Representamos gráfico de densidad de la variable dependiente.
+density_plot <- ggdensity(dfboston, x = "medv", color = "red", add = "mean", rug = TRUE) +
+  theme(axis.text = element_text(size = 10)) +  
+  theme(panel.background = element_rect(fill = "#f2f2f2")) +  
+  geom_density(size = 1.5, color = "red", alpha = 0.5) +  
+  guides(color = FALSE)  
+boxplot_plot <- ggplot(dfboston, aes(y = medv)) +
+  geom_boxplot(fill = "lightblue", color = "blue", alpha = 0.5) +  
+  theme(axis.text = element_text(size = 10)) +  
+  theme(panel.background = element_rect(fill = "#f2f2f2")) + 
+  labs(y = "medv") +  
+  guides(color = FALSE)  
+#Mostrar los gráficos conjuntamente
+plot_list <- list(density_plot,boxplot_plot)
+grid.arrange(grobs = plot_list, ncol = 2)
+```
+
+
+Podemos observar que, en este caso la variable dependiente cuenta con un rango de valores que van desde 5 a 50 en miles de dolares americanos, posee una concentración de valores más elevada conforme nos aproximamos a su media y más baja cuando nos movemos a los extremos (valor mas alto de density y mayor grosor de barra roja situada sobre el eje x), lo cual parece indicar que sigue una distribución normal (dato que será de interés si aplicamos modelos lineales, ya que es uno de los supuestos que debe cumplir el modelo de regresión lineal). En cuanto a la presencia de outliers, parece haber mayor cantidad de valores altos que podrían diferir significativamente del resto (puntos azules en el boxplot).
+
+
+## - Supón que los posibles sesgos pudieran estar representados por los predictores del dataset. ¿Podríamos determinar visual y numéricamente, con ayuda de PCA si los hay?
+
+Encontrar sesgos representados por los predictores del dataset significa que, para todas las muestras alguna variable esta metiendo ruido y sí, es posible averiguarlo por medio de un proceso de ánalisis de componentes principales (PCA).
+Para ello, transformo la matriz n (muestras) x m (variables) en una matriz de n x k (k << m) componentes principales y busco asociación entre dichas variables y esos k componentes. 
+Es decir, hemos reducido la dimensionalidad al capturar la mayor parte de la variabilidad de los datos en un conjunto mucho más compacto de componentes principales y lo que queremos detectar es correlaciones entre los valores de las variables y los valores de las componentes.
+La mejor forma de verlo es mediante un heatmap donde las correlaciones fuertes positivas y negativas se verán en rojo y azul intenso respectivamente.
+
+```{r echo=FALSE}
+library(RColorBrewer)
+cor.dfboston=cor(dfboston)
+pca.boston <- prcomp(dfboston[,-13], scale = TRUE)
+df_pca.boston <- as.data.frame(pca.boston$x[, 1:2])
+pc_scores.boston <- pca.boston$x
+correlation_pc.boston <- cor(dfboston[,-13], pca.boston$x[,1:4])
+#Definimos un rango de colores personalizado
+colors <- colorRampPalette(c("blue", "white", "red"))(100)
+#Editamos el heatmap
+heatmap.2(correlation_pc.boston,
+          scale = "none",
+          col = colors,
+          main = "Heatmap PC - Predictores")
+summary(pca.boston)
+```
+
+Sucede que, si una variable está altamente correlacionada con una componente principal específica, puede sesgar la interpretación de esa componente principal. En lugar de representar una combinación equilibrada de todas las variables originales, esa componente principal podría estar dominada por dicha variable. Esto podría llevar a conclusiones erróneas sobre la estructura subyacente de los datos. 
+
+En nuestro, caso las variables que más fuertemente correlacionadas son "indus", "nox" y "tax" de forma positiva y "dis" de forma negativa respectivamente, todas respecto a la componente 1.
+Estas variables representan:
+
+- indus: proporción de acres comerciales no minoristas por ciudad indica la cantidad de terreno dedicado a actividades comerciales no relacionadas con minoristas en una ciudad específica en comparación con el total de terreno disponible en esa ciudad.
+
+- nox: concentración de óxidos nítricos (partes por 10 millones).
+
+- tax: tipo del impuesto sobre bienes inmuebles de valor íntegro por 10.000 USD.
+
+- dis: distancias ponderadas a cinco centros de empleo de Boston.
+
+El siguiente paso será visualizar la nube de puntos en escala de colores según la distribución de valores de la variable a considerar como posible sesgo en una representación donde tenemos los dos primeras componentes en cada uno de los ejes.
+
+
+```{r echo=FALSE}
+library(gridExtra)
+#Obtener las variables predictoras del dataset
+predictores <- colnames(dfboston)[c(3,4,7,9)]  # Suponiendo que las primeras 12 columnas son variables predictoras
+#Crear una lista para almacenar los gráficos de dispersión
+gradient_plots <- list()
+#Iterar sobre todas las variables predictoras
+for (predictor in predictores) {
+  #Obtener los datos de las componentes principales y las cargas de variables
+  pca.bostonpluspred = cbind.data.frame(State = dfboston[[predictor]], pc_scores.boston)
+  #Crear el gráfico de dispersión
+  gradient.plot <- ggplot(pca.bostonpluspred, aes(PC1, PC2, color=State, fill=State)) + 
+  modelr::geom_ref_line(h = 0) +
+  modelr::geom_ref_line(v = 0) +
+  geom_point() +
+  xlab("PC1") + 
+  ylab("PC2") + 
+  ggtitle("Primeros PC de Boston-Housing", predictor)
+  #Agregar el gráfico a la lista
+  gradient_plots[[predictor]] <- gradient.plot
+
+}
+#Mostrar los gráficos tipo malla
+grid.arrange(grobs = gradient_plots, ncol = 2, nrow = 2)
+```
+
+Las representaciones muestran que, sabiendo que la primera componente principal capta la mayor parte de variabilidad total, en concreto alrededor de un 51% (0.5106 en "Proportion of variance"), podemos decir que, al existir una fuerte correlacion entre ciertas variables y dicha componente, gran parte de ese porcentaje esta influido por el comportamiento de dichas variables. 
+De una forma general, vemos que para las 4 variables los valores correspondientes a zonas censales de boston más altos (puntos azul claro) y más bajos (puntos azul oscuro) se concentran en zonas concretas de la representación y alejados entre sí.
+De esta forma si nosotros por el contexto del problema supiésemos que esas variables no deberían ser tan influyentes, este análisis sería una opción para detectar el sesgo indeseado y en consecuencia retirarlo.
+En este caso, no parece que la variabilidad explicada influida por dichas variables sea de forma artefactual y debemos tener en cuenta que hay más variables que tienen bastante correlacion con dichas componentes y no han sido exploradas de forma visual.
+
+
+## - ¿Qué algoritmo de entre los que conoces aplicarías según el problema para el que lo has identificado?
+
+Como hemos mencionado anteriormente, estamos ante un caso donde la variable que queremos predecir es continua, por lo que vamos a utilizar un modelo de predictores (continuos) para aproximar el valor de la variable respuesta (en este caso es "medv"). 
+
+El algoritmo que vamos a usar será "kknn" (Weighted k-Nearest Neighbors) localizado en el paquete "Caret". Para este problema podríamos usar también el modelo de "Regresión Lineal Múltiple" pero lo descartaremos por simplicidad a la hora de su optimización (contiene un solo hiperparámetro). 
+
+El algoritmo kknn en cambio, presenta una serie de hiperparámetros que influirán a la hora de generar un modelo de predicción por medio de los datos. 
+El objetivo será evaluar cual es la combinación de hiperparámetros por medio de la cual obtengamos un modelo que aporte mejores métricas del algoritmo. 
+
+En este caso, tratándose de un problema de regresión las métricas serán RMSE, R-Squared y MAE y el mejor modelo vendrá dado por el que consiga disminuir más el valor de dichas métricas, ya que las tres son medidas de error.
+
+## - ¿Sería necesario aplicar alguna transformación a los datos? ¿Por qué? Si la respuesta es afirmativa, explica qué tendría de beneficioso hacerlo.
+
+- Primeramente destacar que, a partir de aquí, prescindimos de la única variable de tipo factor en el dataset denominada "chas" con el fin de evitar particionar los datos en dos grupos.
+
+- Por otro lado, comprobamos que no es necesario imputar valores explorando nuestro dataset en caso de tener valores nulos y vemos que no tenemos. Además, resulta conveniente explorar si tenemos variables con varianza cercana a 0 (en este caso no).
+
+- A continuación, debemos asegurar que las variables se sitúan en la misma escala. Esto podemos hacerlo por medio de los estadísticos descriptivos de las variables. A simple vista, llama la atención que tenemos medias y rangos de máximo-mínimo distintos entre variables.
+
+- La normalización ayuda a que todas las variables contribuyan de manera equitativa al modelo, evitando que las variables con valores más grandes dominen la contribución al ajuste del modelo (mostrado en la siguiente representación gráfica tipo boxplot la diferencia).
+
+- Además, teniendo en cuenta que no hay presencia de inconsistencias y no tenemos problemas de alta dimensionalidad, concluimos que no es necesario realizar ninguna otra transformación más allá del escalado de variables.
+
+
+```{r}
+#Prescindimos de chas para analisis de los valores de cada variable
+dfboston <- myboston[,-4]
+summary(dfboston)
+#Comprobamos que no hay valores nulos reconocidos por R
+sum(is.na(dfboston))
+#Detección de variables con varianza cercana a 0
+nzv.boston <- nearZeroVar(dfboston)
+nzv.boston
+#Escalamos los datos
+dfboston.scaled <- scale(dfboston)
+#Creamos los boxplots para datos originales y escalados
+par(mfrow = c(1, 2))
+boxplot(dfboston, main = "Variables sin Escalar", las = 2)
+boxplot(dfboston.scaled, main = "Variables Escaladas", las = 2)
+```
+
+
+## - Aplica el algoritmo designado en la pregunta 5 y optimiza el estadístico o estadísticos que consideres pertinente para medir su rendimiento mediante la selección de un modelo óptimo. Comenta los resultados.
+
+En primer lugar, procedemos a explorar la información del algoritmo considerado. Como vemos,  a modo de comparación, el modelo de regresión lineal múltiple (lm) tiene un solo hiperparámetro, que es el intercepto. 
+El algoritmo K vecinos más cercanos (kknn) presenta tres hiperparámetros: **kmax** es el número de vecinos a usar  (crítico ya que es el hiperparámetro más importante en el algoritmo y afecta directamente al rendimiento del modelo), **distancia** se trata de la medida de distancia a utilizar para calcular la cercanía entre puntos y **kernel** es la función de núcleo utilizada para ponderar las contribuciones de los vecinos cercanos en la predicción.
+
+
+```{r}
+library(kknn)
+modelLookup("lm")
+modelLookup("kknn")
+```
+
+El primer paso, será dividir el conjunto inicial de datos en dos conjuntos: 80%  para entrenamiento (modelar los regresores) y 20% para prueba (evaluación). Esto lo podemos realizar mediante la función "createDataPartition()". 
+
+Esta técnica se denomina "hold-out" y el fundamento es esconder una parte de los datos al modelo que vamos a entrenar ya que, no queremos un modelo que se ajuste perfectamente a los datos sino un modelo que cuando le aportemos datos nuevos, prediga el valor de la variable respuesta con el menor error posible, por tanto reservamos una parte de los datos para evaluar la capacidad generalizadora de nuestro modelo.
+
+
+```{r}
+#Partición reproducible con semilla de aleatorización
+set.seed(897)
+boston.TrainIdx.80<- createDataPartition(dfboston$medv,
+                                       p=0.8, #Genera un 80% para train, 20% para test
+                                       list = FALSE, #Resultados en una matriz
+                                       times = 1) #Genera solamente una partición 80/20
+#Metadatos de la partición de train
+str(boston.TrainIdx.80) 
+#Definimos datos de train y de test
+boston.Datos.Train<-dfboston[boston.TrainIdx.80,]
+boston.Datos.Test<-dfboston[-boston.TrainIdx.80,]
+```
+
+Comentar que, de las 506 observaciones disponibles, la partición ha sido 407 para entrenamiento y 99 para test de forma aleatoria con un índice de remuestreo.
+
+Llegado este momento, ya estamos listos para operar con nuestro algoritmo.
+En primer lugar, mencionar que "caret" proporciona unos valores por defecto para los hiperparámetros de cada algoritmo. 
+
+Por otro lado, la función "train()" será la empleada para entrenar nuestro modelo mediante los predictores de entrenamiento y los valores de entrenamiento correspondientes para la variable de salida.En todo momento, usaremos "system.time" para controlar el tiempo de entrenamiento para cada algoritmo.
+
+El funcionamiento sería básicamente buscar una combinación de valores de hiperparámetros óptima usando parte de datos de entrenamiento como conjunto de validación siguiendo alguno de los métodos de remuestreo. Por defecto ese método es "Bootstrap", aunque mediante la función "trainControl()" podemos fijar otros como validación cruzada con o sin repetición.
+
+Una vez encontrada la mejor combinación o configuración de ellos, genera un modelo final. 
+Este modelo final lo entrena utilizando todos los datos de entrenamiento proporcionados (lo que llama final model).
+
+El método de resmuestreo empleado en este primer dataset será validación cruzada de 5 pliegues repetida 3 veces y los datos serán escalados y centrados con la función "preProcess()". Además. usaremos dos semillas de aleatorización distintas para entrenamiento y remuestreo, que se mantendrán al analizar el resto de datasets, con el fin de obtener resultados reproducibles. 
+
+El objetivo es calcular la diferencia entre las predicciones del modelo y las de la función objetivo, que vendrán dadas por varias medidas de error. Las predicciones del modelo se harán sobre los datos de test por medio de la función "predict()" de caret.
+En concreto, atendemos a la raiz cuadrada del error cuadrático medio (RMSE) para acercarme a las maginitudes originales del problema.
+
+Los valores de hiperparámetros aportados por caret para "kknn" son kmax 5, 7 y 9. Distancia 2 que corresponde con la euclidiana y kernel optimal.
+
+
+```{r}
+knninfo = getModelInfo("kknn")
+knninfo$kknn$grid(x=NULL,y=NULL,len=3)
+#Crear un objeto trainControl para especificar los detalles de la validación cruzada
+set.seed(462)
+fit.Control.boston <- trainControl(method = "repeatedcv",   
+                     number = 5,                            
+                     repeats = 3,                           
+                     verboseIter = FALSE)
+set.seed(897)
+system.time(boston.kknn.modelo <-train(medv ~ ., data = boston.Datos.Train, method='kknn', trControl = fit.Control.boston, preProcess = c("center", "scale")))
+boston.kknn.modelo
+```
+
+En problemas de regresión, es común atender a 3 medidas utilizadas con frecuencia para evaluar el rendimiento de la regresión: la media cuadrática del error (“RMSE” Root Mean Squared Error) ya comentada, el R cuadrado simple (“Rsquared”), a partir de la regresión lineal y la media absoluta del error (MAE Mean Absolute Error).
+
+Además de las medidas de calidad, nos proporciona cual sería el modelo optimizado teniendo en cuenta la parrilla de hiperparámetros por defecto.En este punto, podemos observar que para un valor de distancia por defecto de 2 y un valor de kernel por defecto "optimal", el error para los datos de entrenamiento sube su valor conforme aumenta el valor de kmax, lo cual no es interesante.
+
+El próximo paso es preguntarnos si es posible disminuir ese error de entrenamiento obteniendo así un modelo más preciso y mejor ajustado.
+
+Cuando no tenemos mucha información sobre el contexto de nuestros datos podría ser interesante realizar un exploración de combináción aleatoria de hiperparámetros con "search(random)" y "tuneLength" (n combinaciones distintas de hiperparámetros), aunque sería muy arriesgado ya que al barrer de forma tan amplia el espacio de valores, podemos estar prescindindiendo de valores que podrían ser óptimos para el modelo. En este caso, no lo vamos a tener en cuenta.
+
+Por tanto, se hace necesario construir una propia parrilla de hiperparámetros lo suficiente amplia como para afirmar que podemos encontrar una combinación de hiperparámetros que nos generen un modelo con medidas de error y tiempo de ejecución aceptables.
+
+La elección de la parrilla se lleva a cabo con la función "expand.grid()" y como ya sabemos, el valor de k es uno de los hiperparámetros más críticos en kknn. Un valor demasiado pequeño puede hacer que el modelo sea sensible al ruido y a los valores atípicos, mientras que un valor demasiado grande puede hacer que el modelo pierda precisión y se vuelva computacionalmente costoso. 
+
+Una práctica común es probar valores de k en un rango amplio (por ejemplo, de 1 a 20) y seleccionar aquel que optimice el rendimiento del modelo en función de una métrica de evaluación (validación cruzada). En nuestro caso ese rango hemos visto que podemos acortarlo ya que entre 5-7 y entre 1-2 vecinos no hay mejoría en el error, por tanto será de 3 a 6 nuestro rango. Además, incluimos distancias  1 (Manhattan), 2 (Euclídea) y 3 (Minkowski) y diferentes tipos de kernel que son los que mejor han funcionado.
+
+
+```{r}
+mygrid.boston = expand.grid(kmax = c(3:6),
+            distance = c(1:3),
+            kernel = c("triangular","optimal", "biweight"))
+
+#De nuevo, entrenamos con "fit.Control.boston"
+set.seed(462)
+fit.Control.boston <- trainControl(method = "repeatedcv", 
+                     number = 5,
+                     repeats = 3,
+                     verboseIter = FALSE,
+                     allowParallel = TRUE)
+                     
+set.seed(897)
+system.time(knnFit.boston <- train(medv ~ ., data = boston.Datos.Train, 
+                 method = "kknn", 
+                 trControl = fit.Control.boston,
+                 verbose = FALSE,
+                 tuneGrid=mygrid.boston,
+                 preProcess = c("center", "scale")))
+knnFit.boston
+```
+
+De esta forma, observamos que hay una tendencia a obtener mayores valores de RMSE cuando se usa el mismo tipo de determinados kernels (triangular y biweight) para distintos valores de kmax y de distancia. Por otro lado, independientemente del tipo de kernel usado, generalmente se obtiene un menor error a valores de distancias kmax moderadamente bajos. Además, se observa también que el kernel optimal y distancia 1 son los más apropiados junto con valores de kmax entre 3 y 5 (eligiendo el valor 4 en el mejor modelo). 
+
+
+```{r}
+ggplot(knnFit.boston)
+```
+
+
+Por tanto, nuestro  modelo final vendrá dado por un valor 4 de vecinos a usar, distancia de tipo Manhattan (1), es decir, la distancia entre dos puntos se calcula sumando las diferencias absolutas entre sus coordenadas y kernel tipo optimal. 
+Este modelo registra el menor error RMSE asociado a los datos de entrenamiento y por tanto, el siguiente paso será corroborar si es capaz de generalizar bien manteniendo o incluso disminuyendo el error asociado a los datos de evaluación.
+
+Para ello, hacemos uso de la función "predict()" para predecir el valor de nuestros datos de test por medio del modelo final obteniendo un RMSE moderadamente más bajo que para los datos de entrenamiento. Estos resultados muestran que nuestro modelo se aproxima bien incluso para ejemplos no vistos durante el entrenamiento. 
+
+```{r}
+#Ahora obtenemos el error de los datos de evaluación asociado al modelo
+preds.caretknn = predict(knnFit.boston,newdata=boston.Datos.Test)
+cat("El error RMSE error de los datos de evaluación es", sqrt((1/nrow(boston.Datos.Test)) * sum((boston.Datos.Test$medv - preds.caretknn)^2)),"\n")
+```
+De un modo más ilustrativo, podemos ver como los datos predichos de la variable respuesta medv (puntos azules) se aproximan a los datos reales de medv que hemos reservado para el test (dados por la línea roja).
+
+
+```{r echo=FALSE}
+#Dataframe con el resultado de la prediccion frente al valor real de los datos de test
+plot_pred.real <- data.frame(Real = boston.Datos.Test$medv,
+                        Predicho = preds.caretknn)
+
+
+#Gráfico de valores predichos vs valores reales
+ggplot(plot_pred.real, aes(x = Real, y = Predicho)) +
+  geom_point(aes(color = "Predichos"), alpha = 0.6) +  #Color para los valores predichos
+  geom_abline(intercept = 0, slope = 1, color = "red", linetype = "dashed") +
+  labs(x = "Medv reales", y = "Medv predichos", 
+       title = "Predicción frente a realidad en datos de test") +
+  scale_color_manual(values = c("Predichos" = "blue")) +  
+  theme_minimal()
+```
+
+De la misma forma podemos verlo numéricamente, mostrando en una tabla el valor de los datos reales y el valor de los datos predichos por los dos modelos. Esto es posible gracias a la función "extractPrediction()" de caret que simplemente necesita los modelos, las variables independientes y dependiente de los datos de test y cambiamos el "dataType" para indicar que son de Test. Como vemos, obtenemos valores próximos a la realidad usando kknn.
+
+
+```{r echo=FALSE}
+library(kableExtra)
+model.boston <- list(KNN=knnFit.boston)
+boston.predict2 <- extractPrediction(model.boston,
+                                   testX = boston.Datos.Test[,-13],
+                                   testY = boston.Datos.Test$medv)
+boston.predict2 <- subset(boston.predict2, dataType== "Test")
+boston.predict2.head <- head(boston.predict2)
+kable(boston.predict2.head)
+```
+
+
+Para finalizar este primer dataset, concluimos que la capacidad del modelo para predecir la variable objetivo es bastante aceptable obteniendo un error muy similar al de los datos de entrenamiento e incluso ligeramente mejor, por lo que hemos cumplido el obejtivo inicial.
+
+
+# - Dataset 2: LetterRecognition
+
+## - ¿Qué tamaño tiene? ¿De qué tipo son las variables?
+
+El conjunto de datos considerado tiene un tamaño de 20000 filas y 17 columnas, es decir, tenemos una gran cantidad de ejemplos a tener en cuenta a la hora de operar con ellos. 
+En el dataset (rescatado del paquete "mlbench") se recogen 20000 muestras con 16 carácteristicas (variables independientes) de tipo numérico (escaladas para ajustarse a un rango de valores enteros de 0 a 15). La variable que se intenta predecir es una variable discreta de tipo factor con 26 niveles (lettr).
+
+```{r}
+data("LetterRecognition")
+myletter <- LetterRecognition
+str(myletter)
+```
+
+
+## - Explica qué representan los ejemplos
+
+El problema al que nos enfrentamos representa la identificación de las 26 letras mayúsculas del alfabeto inglés (variable objetivo desde la 'A' hasta la 'Z') a partir de un gran número de visualizaciones de píxeles rectangulares en blanco y negro. Las imágenes de los caracteres se basaban en 20 fuentes diferentes y cada letra dentro de estas 20 fuentes se distorsionó aleatoriamente para producir un archivo de 20000 estímulos únicos. Cada estímulo se convirtió en 16 atributos numéricos primitivos (momentos estadísticos y recuento de bordes) que luego se escalaron para ajustarse a un rango de valores enteros de 0 a 15.
+
+En concreto, los atributos corresponden a posición y dimensiones de la caja (x.box, y.box, width y high), número y distribución de píxeles encendidos (onpix, x.bar, y.bar, x2bar, y2bar, xybar, x2ybr y xy2br), conteo de bordes (x.ege y y.ege) y correlaciones entre diferentes características de los píxeles (xybar, xegvy, yegvx).
+
+Resumiendo, estas características representan diferentes aspectos de las imágenes de las letras que pueden ayudar a un modelo a distinguir entre diferentes letras. 
+Al analizar cómo estas características varían para diferentes letras, se puede comprender cómo influyen en la predicción de la letra.
+
+## - ¿Es un problema de clasificación, regresión o cualquier otro? Explica por qué. Si fuera un problema de clasificación, ¿qué tienes que decir sobre la distribución de los ejemplos de cada clase? Si fuera de regresión, ¿qué tienes que decir de la distribución de valores de la variable dependiente?
+
+En este caso, el problema al que nos enfrentamos es de clasificación.
+La etiqueta de nuestros ejemplos que nosotros queremos predecir es discreta en este problema, es decir, la variable respuesta a predecir es una etiqueta de clase que representa diferentes categorías o clases (en concreto 26) a las que pertenecen los datos.
+
+Dicho con otras palabras, tenemos 26 letras distintas definidas por valores de una serie de características (vector de características), que nos permite ubicarlo en un espacio dado por esas caracteristicas, pero no sabemos cuando tengamos un ejemplo nuevo a que letra asignarlo.
+Nuestra tarea será por tanto encontrar un hiperespacio que mejor separe y por tanto clasifique ejemplos de distintas letras.
+
+En primer lugar, para comentar la distribución de los ejemplos de cada clase, exploramos si las diferentes clases estan balanceadas viendo que más o menos lo están, mostrando una frecuencia de alrededor de 800 ejemplos por clase.
+
+
+```{r echo=FALSE}
+#Frecuencias de clase
+class_df <- as.data.frame(table(myletter$lettr))
+ggplot(class_df, aes(x = Var1, y = Freq, fill = Freq)) +
+  geom_bar(stat = "identity") +
+  scale_fill_gradient(low = "blue", high = "red") +
+  labs(x = "Letras", y = "Frecuencia", title = "Frecuencias de clase en LeterRecognition") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+```
+
+
+Por otro lado, podemos representar de varias formas la variabla de salida (lettr) en función de las variables predictoras. En este caso, vamos a emplear la función "featurePlot()", seleccionando tipo caja y vemos como se distribuye tanto la media de clase como su distribucion de valores para un conjunto de variables predictoras. Destacar que en este caso, mostraremos una variable que represente a cada uno de los aspectos generales anteriormente comentados (width, onpix, y.bar y x.edge).
+
+
+```{r echo=FALSE}
+#Generamos el gráfico con featurePlot tipo boxplot de 4 variables seleccionadas
+featurePlot(x = myletter[,c(4,6,8,14)], y = myletter$lettr, plot = "boxplot", auto.key = TRUE)
+```
+
+Esta representación nos puede dar ciertas pistas de la influencia que podrían tener algunas variables sobre el futuro clasificador de nuestro modelo. En este caso vemos que, variables como "y.bar" o "x.edge" aparentemente registran distribuciones de valores significativamente diferentes entre unas clases y otras, por lo que podrían discriminar bien unos tipos de letra de otros. 
+En cambio, observando la variable "width" vemos que hay varios tipos de letras que se mueven por el mismo rango de valores obteniendo medias muy parecidas (A, B, C, D, E, F y G por ejemplo) y eso se podría traducir en una menor capacidad de contribuir a la separación entre clases por parte de esa variable.
+
+
+
+## - Supón que los posibles sesgos pudieran estar representados por los predictores del dataset. ¿Podríamos determinar visual y numéricamente, con ayuda de PCA si los hay?
+
+En esta caso, como ya vimos anteriormente, también será posible determinar posibles sesgos mediante análisis de componentes principales (PCA).
+La representación heatmap entre los valores de las variables y los valores de las componentes muestra fuertes correlaciones entre las variables "width, x.box y onpix" con la primera componente y de forma positiva (rojo intenso). En cambio, la correlación negativa más fuerte la encontramos entre la componente 2 y la variable "y.bar" (en azul intenso).
+
+- width: ancho de la caja que contiene la letra.
+- x.box: posición horizontal de la caja que contiene la letra.
+- onpix: número total de píxeles encendidos (píxeles negros) en la imagen de la letra.
+- y.bar: coordenada "y" promedio de los píxeles encendidos en la caja.
+
+
+```{r echo=FALSE}
+pca.letter <- prcomp(myletter[,-1], scale = TRUE)
+df_pca.letter <- as.data.frame(pca.letter$x[, 1:2])
+pc_scores.letter <- pca.letter$x
+correlation_pc.letter <- cor(myletter[,-1], pca.letter$x[,1:3])
+#Definir un rango de colores personalizado
+colors <- colorRampPalette(c("blue", "white", "red"))(100)
+#Modificar el heatmap
+heatmap.2(correlation_pc.letter,
+          scale = "none",
+          col = colors,
+          main = "Heatmap PC - Predictores")
+summary(pca.letter)
+```
+
+En principio, por la semántica de las variables parece lógico pensar que atributos relacionados con capturar la forma de la letra y cómo está distribuida en la imagen ("onpix" y "y.bar") o relacionados con la forma de la caja que contiene la letra ("width" y "x.box") tengan un gran peso en la varianza retenida por las dos primeras componentes. No obstante, debe tenerse en cuenta que, la influencia de dichas variables es en base al porcentaje de varianza explicada por dichas componentes y no a la total.
+
+Como ya mencionamos, la visualización de la nube de puntos en el espacio dado por las dos primeras componentes, en escala de colores según la distribución de valores de la variables consideradas, será el próximo paso.
+
+```{r echo=FALSE}
+#Obtener las variables predictoras del dataset
+predictores <- colnames(myletter)[c(2,4,6,8)]  # Suponiendo que las últimas 16 columnas son variables predictoras
+#Crear una lista para almacenar los gráficos de dispersión
+gradient_plots <- list()
+#Iterar sobre todas las variables predictoras
+for (predictor in predictores) {
+  #Obtener los datos de las componentes principales y las cargas de variables
+  pca.letterpluspred = cbind.data.frame(State = myletter[[predictor]], pc_scores.letter)
+  #Crear el gráfico de dispersión
+  gradient.plot <- ggplot(pca.letterpluspred, aes(PC1, PC2, color=State, fill=State)) + 
+  modelr::geom_ref_line(h = 0) +
+  modelr::geom_ref_line(v = 0) +
+  geom_point() +
+  xlab("PC1") + 
+  ylab("PC2") + 
+  ggtitle("Primeros PC de Letter-Recognition", predictor)
+  #Agregar el gráfico a la lista
+  gradient_plots[[predictor]] <- gradient.plot
+
+}
+
+#Mostrar los gráficos tipo malla
+grid.arrange(grobs = gradient_plots, ncol = 2, nrow = 2)
+```
+
+
+En este caso, la representación más clara se ve en la variable "y.bar", correlacionada con la componente 2, donde vemos valores más altos de la variable concentrados donde el valor de la segunda componente es menor y viceversa. En el resto de representaciones se aprecia justo lo contrario, encontrando valores más altos de la variable hacia la derecha (valores altos de la primera componente) y más bajos hacia la izquierda.
+
+Por tanto, de nuevo somos capaces de detectar posibles patrones o sesgos en los datos con PCA.
+
+
+## - ¿Qué algoritmo de entre los que conoces aplicarías según el problema para el que lo has identificado?
+
+En este caso, la variable a predecir es de tipo factor o de clase, por lo que vamos a utilizar un modelo de predictores (numéricos) para clasificar las observaciones en un tipo de letra determinado (variable "lettr"). 
+
+Disponemos de varios algoritmos que podemos usar para clasificar en "caret", como pueden ser "kknn" (visto en el caso anterior) y "naive_bayes".Probaremos de nuevo el algoritmo  "kknn" (Weighted k-Nearest Neighbors), esta vez para clasificación. 
+
+El motivo de no usar Naive Bayes, viene dado por ser un algoritmo que calcula probabilidades y se hace complejo calcular distribuciones de probabilidad de variables numéricas, como ocurre en este caso. Por otro lado, Naive Bayes asume que las características poseen distribuciones de probabilidad independientes y en este caso nos encontramos variables que son combinaciones de otras que si tendrán relación y por tanto, podría ser menos preciso.
+
+El objetivo será buscar el modelo que mejor precisión alcance a la hora de encontrar el vector de características que maximice la separación de las clases en la variable respuesta. Este algoritmo, de nuevo calculará distancias entre los vecinos más cercanos y las ordenará para asignar un tipo de letra u otro. 
+
+## - ¿Sería necesario aplicar alguna transformación a los datos? ¿Por qué? Si la respuesta es afirmativa, explica qué tendría de beneficioso hacerlo
+
+En primer lugar, si exploramos la información del paquete "mlbench", nos indica que las variables han sido escaladas a un mismo rango de valores, hecho que podemos contrastar viendo el resumen de estadísticos descriptivos de los predictores. Por tanto, no será nescesario recurrir a la normalización de los datos.
+
+Por otro lado, el dataset carece de valores nulos detectados por R, por lo que no será necesario imputar valores. Además, no se aprecian inconsistencias y como ya hemos visto, las clases están balancedas, registrando frecuencias similares.
+
+Otro aspecto a valorar es la presencia de variables con varianza cercana 0, que comprobamos de nuevo con la función "nearZeroVar()" y en este caso no es necesario retirar ninguna.
+
+Por último, hemos visto en el "featurePlot", algunas variables cuentan con valores que podrían diferir significativamente de la media en una misma clase (outliers). El tratamiento de estos outliers puede ser beneficioso (obteniendo un conjunto de datos menos ruidoso) pero, no siempre estoy dispuesto a perder esos outliers porque podria sesgar mi conclusion final en mayor o menor medida, así que los mantendremos.
+
+
+```{r}
+summary(myletter)
+#Comprobamos que no hay valores nulos reconocidos por R
+sum(is.na(myletter))
+#Detección de variables con varianza cercana a 0
+nzv.letter <- nearZeroVar(myletter)
+nzv.letter
+```
+
+
+
+## - Aplica el algoritmo designado en la pregunta 5 y optimiza el estadístico o estadísticos que consideres pertinente para medir su rendimiento mediante la selección de un modelo óptimo. Comenta los resultados
+
+En primer lugar, recordamos que, al igual que para regresión, el algoritmo K vecinos más cercanos (kknn), presenta los mismos tres hiperparámetros para clasificación: el número de vecinos a usar (kmax), la medida de distancia a utilizar para calcular la cercanía entre puntos (distancia) y la función de núcleo utilizada para ponderar las contribuciones de los vecinos cercanos en la predicción (kernel). 
+
+
+```{r}
+library(kknn)
+modelLookup("kknn")
+```
+
+Nos encontramos con un enorme número de observaciones (filas), por lo que podría resultar interesante prototipar, es decir, selecciono un subconjunto de la matriz de valores, entrenamos y optimizamos el modelo (desarrollando el codigo sobre eso) y más adelante probamos con la matriz completa.
+
+En este caso, contamos con la disponibilidad del cluster "dayhoff.inf.um.es" donde vamos a ir probando distintas parrillas de hiperparámetros hasta dar con una que sea lo suficientemente amplia sin comprometer demasiado el tiempo de ejecución.
+
+De igual manera que en el primer dataset, vamos le aplicaremos "hold-out" a nuestro conjunto. Dividimos el conjunto inicial de datos en dos conjuntos: entrenamiento (80% para crear los clasificadores) y prueba (20% para evaluarlos). Esto lo volvemos a realizar mediante la función "createDataPartition()".
+
+
+```{r}
+set.seed(897)
+letter.TrainIdx.80<- createDataPartition(myletter$lettr,
+                                       p=0.8, 
+                                       list = FALSE, 
+                                       times = 1) 
+
+str(letter.TrainIdx.80) 
+letter.Datos.Train<-myletter[letter.TrainIdx.80,]
+letter.Datos.Test<-myletter[-letter.TrainIdx.80,]
+```
+
+En el primer dataset, hemos podido observar la parrilla de hiperparámetros por defecto que se obtiene del algoritmo kknn, aplicandola a la ejecución de un modelo con esos hiperparámetros. En este caso, el número de observaciones es exponencialmente mayor y por tanto el coste computacional también lo será, por lo que vamos a intentar reducir el número de combinaciones a explorar y quitamos las repeticiones de la validación cruzada en el remuestreo de "trainControl".
+
+En cuanto a las medidas de calidad del modelo dadas por el algoritmo, para el caso de clasificación en kknn contamos con "accuracy" o precisión y "kappa", que resulta ser un parámetro a veces más interesante que el accuracy, debido a que es más restrictivo, es decir, mide el indice de acierto pero no tiene en cuenta los aciertos debido a la casualidad. 
+
+Tras varias pruebas, un número inferior a 7 del parámetro "kmax" disminuye la precisión del modelo (accuracy), es decir, no es favorable. En cuanto a distancias, probamos 1 (Manhattan), 2 (Euclídea). El tipo de kernel nos genera mejor resultado de las medidas de calidad "triangular" y "optimal". Dicho esto, procedemos a la búsqueda de la combinación de hiperparámetros más óptima.
+
+
+```{r}
+mygrid.knn.letter = expand.grid(kmax = c(7:10),
+            distance = c(1:2),
+            kernel = c("triangular","optimal"))
+
+set.seed(462)
+knn.Control.letter <- trainControl(method = "cv", 
+                     number = 10,
+                     verboseIter = FALSE,
+                     allowParallel = TRUE)
+                     
+set.seed(897)
+system.time(knnFit.letter <- train(lettr ~ ., data = letter.Datos.Train, 
+                 method = "kknn", 
+                 trControl = knn.Control.letter,
+                 verbose = FALSE,
+                 tuneGrid=mygrid.knn.letter))
+
+knnFit.letter
+
+```
+
+Como resultado, mencionar que obtenemos un alto valor tanto de accuracy como de kappa con combinaciones distintas de hiperparámetros y por tanto, las diferencias son minúsculas.
+Dicho esto, nuestro modelo final y más óptimo viene dado por valores de distancia Manhattan (1) y con kernel triangular (línea rojiza en la gráfica inferior). La diferencia entre kmax es mas ajustada, siendo el mejor valor 9.
+
+El próximo paso es recurrir a nuestra reserva de datos para test y evaluar como predice el modelo analizando la matriz de confusión y los estadísticos asociados a la misma.
+
+
+```{r}
+ggplot(knnFit.letter)
+```
+
+La matriz de confusión compara entre todas las clases disponibles el ratio de acierto y error, es decir, compara cuantas veces debería haber clasificado una determinada condición dada la realidad (letra) y cuantas veces lo he hecho y cuantas no. Esto lo realiza para todas y nos muestra unas medidas de calidad generales de exactitud (accuracy y kappa).
+Además, resulta interesante analizar resultados de especificidad, sensibilidad o prevalencia de cada clase en la matriz de confusión.
+
+```{r}
+letter.predict <- predict(knnFit.letter,newdata = letter.Datos.Test)
+letter.conf.matrix <- confusionMatrix(letter.predict, letter.Datos.Test$lettr)
+letter.conf.matrix
+```
+
+
+En general, la diagonal marca cuantas veces dada una condición, la acierto y en este caso acierta casi todos los casos. Por mencionar algún error, se aprecia en la matriz que hay 4 ocasiones en las que dada la letra P, nuestro modelo predice F.
+La sensibilidad y la especificidad son dos medidas de acierto de casos positivos y negativos respectivamente.
+Dado que nuestro objetivo es ver buenas sensibilidades y buenas especificidades (desde el punto de vista de la optimizacion debo maximizar los dos a la vez). En este caso, obtenemos para todas las letras sensibilidades y especificidades por encima del 0.9 (muy bueno)y lo mismo sucede para nuestras métricas de calidad accuracy y kappa. 
+
+Por otro lado, la prevalencia muestra la proporción de cada clase con respecto al total de observaciones en el conjunto de datos y vemos que adquiere casi el mismo valor para todas las clases. Además, el "No Information Rate" (NIR) es la tasa de predicción que se alcanzaría si siempre se predijera la clase más frecuente en el conjunto de datos sin tener en cuenta ninguna otra característica. En este caso vemos que, alcanza valores similares a la prevalencia de las clases, por lo que no hay una clase más frecuente que otra, como ya sabemos.
+
+Otra de las medidas más interesantes mostradas en matriz de confusión de caret, es el test de McNemar, usado para comparar clasificadores o para comparar la clasificación real con nuestro clasificador (es una chi cuadrado en esencia restando 1 y elevando al cuadrado para solo quedarme con valores positivos). Este test no es aplicable para problemas multiclase como este (vemos valor "NA"), aunque si lo será para el dataset 3.
+
+
+```{r echo=FALSE}
+library(pheatmap)
+#Personalizar la paleta de colores
+my_color_palette <- colorRampPalette(c("cyan", "white", "green"))(100)
+
+#Crear el heatmap personalizado
+pheatmap(letter.conf.matrix$byClass,
+         display_numbers = TRUE,
+         number_color = "black",
+         fontsize = 8,
+         fontsize_number = 7,
+         border_color = "black",
+         legend_breaks = c(0, 0.2, 0.4, 0.6, 0.8),
+         clustering_method = "ward.D2",
+         col = my_color_palette)
+```
+
+Por último, podemos representar la agrupación de las diferentes clases en función de sus valores en los diferentes parámetros aportados por la matriz de confusión, es decir, podemos representar en un heatmap que mostrará visualmente cómo varían estas métricas entre diferentes clases o grupos en nuestros datos. Cada celda del heatmap, representará una métrica específica para una combinación de clases o grupos en el conjunto de datos. Los colores en el heatmap se utilizan para indicar los valores de las métricas, donde diferentes colores pueden representar diferentes niveles o rangos de valores. En concreto, verde para valores altos que se irá aproximando a un azul cyan conforme disminuya pasando por el blanco. 
+
+Destacaremos que las diferencias entre las clases son minúsculas y todas tienen valores altos y muy similares de la mayoría de parámetros. Los valores bajos son correspondientes a datos de prevalencia que se corresponde con dividir la totalidad de prevalencia para un conjunto de datos (1) entre el número de clases que la componen (26), obteniendo un valor de aproximadamente 0.04, que es el que vemos ya que no hay una clase mayoritaria. 
+
+
+Podemos concluir por tanto que, nuestro modelo clasifica de una forma muy favorable dado nuestra muestra de entrenamiento y test, con un tiempo de ejecución aceptable.
+
+
+
+# - Dataset: Diabetes en el BRFSS
+
+## - ¿Qué tamaño tiene? ¿De qué tipo son las variables?
+
+El conjunto de datos considerado tiene un tamaño de 70692 filas (observaciones) y 22 columnas (variables). En el dataset, en cuanto a variables independientes, la mayoría son de tipo discretas y binarias, donde nuestra variable objetivo (Diabetes_binary) también es de este tipo. 
+Por otro lado, contamos con variables discretas multinivel, como puede ser la salud personal (GenHealth), el rango de edad (Age), el nivel educativo (Education) y el nivel de ingresos del hogar (Income). Las variables discretas binarias y multinivel será declaradas como factores. 
+
+Además, contamos con 3 variables de tipo numérico, que son "PhysHlth" relacionada con el estado físico de la persona en cuanto a lesiones y dolor, "MentHlth" relacionada con la frecuencia de enfermedades mentales y el índice de masa corporal "BMI".
+
+
+```{r}
+#Cargamos dataset y convertimos las variables a factores
+mydiabetes <- read.csv("diabetesBRFSS2015.csv")
+col_names <- names(mydiabetes)
+factor_cols <- setdiff(seq_along(col_names), c(5, 16, 17))
+mydiabetes[factor_cols] <- lapply(mydiabetes[factor_cols], factor)
+#Exploramos dimensión del dataset y mostramos resumen de tipos de variables
+str(mydiabetes)
+```
+
+
+## - Explica qué representan los ejemplos
+
+En 1984 desde Estados Unidos, los Centros para el Control y la Prevención de Enfermedades (CDC) iniciaron el Sistema de Vigilancia de Factores de Riesgo del Comportamiento (BRFSS). 
+BRFSS se utiliza para recopilar datos de prevalencia entre residentes adultos estadounidenses con respecto a sus conductas de riesgo y prácticas de salud preventivas que pueden afectar su estado de salud. En este caso, volvemos a tener una gran cantidad de ejemplos que representan diversos hábitos de la población estadounidense, con el fin de intentar predecir si una persona padecerá diabetes en base a su estilo de vida. 
+
+
+## - ¿Es un problema de clasificación, regresión o cualquier otro? Explica por qué. Si fuera un problema de clasificación, ¿qué tienes que decir sobre la distribución de los ejemplos de cada clase? Si fuera de regresión, ¿qué tienes que decir de la distribución de valores de la variable dependiente?
+
+En este caso, nos encontramos ante un problema donde la variable obejetivo a predecir es de clase binaria y discreta, es decir, puede tener solo dos valores posibles (0 y 1), que corresponde con no tener o si tener diabetes. Por tanto, nuestra tarea será desarrollar un modelo que clasifique, de la manera más óptima posible, las observaciones en una clase o en otra, en base a las variables independientes o predictoras (clasificación). 
+
+En cuanto a la distribución de los ejemplos de cada clase, vamos a representar la distribución de dos variables de cada tipo (discretas binarias, discretas multinivel y continuas), coloreadas por la variable respuesta, para ver de forma aproximada como difieren diábeticos y no diabéticos respecto a la distribución de algunos predictores. 
+
+```{r echo=FALSE}
+#Frecuencias de clase
+class_df <- as.data.frame(table(mydiabetes$Diabetes_binary))
+names(class_df) <- c("Diabetes_binary", "Frecuencia")
+class_df$Diabetes_binary <- ifelse(class_df$Diabetes_binary == "0", "No Diabetes (0)", "Diabetes (1)")
+class_df
+
+#Obtener nombres de variables binarias, moultinivel y numéricas
+binary_variables <- names(mydiabetes[,-1])[sapply(mydiabetes, is.factor) & sapply(mydiabetes, nlevels) == 2]
+numeric_variables <- names(mydiabetes)[sapply(mydiabetes, is.numeric)]
+factor_variables <- names(mydiabetes)[sapply(mydiabetes, is.factor) & sapply(mydiabetes, nlevels) > 2]
+
+custom_colors <- c("cyan", "purple")
+
+#Función para generar gráficos de barras
+generate_bar_plots <- function(variables, data, var_type) {
+  bar_plots <- lapply(variables, function(var) {
+    ggplot(data, aes_string(x = var, fill = as.factor(mydiabetes$Diabetes_binary))) +
+      geom_bar(position = "stack") +
+      labs(title = paste("Distribución de", var, "por clase"),
+           x = var, y = "Frecuencia") +
+      scale_fill_manual(values = custom_colors, name = "Diabetes_binary") +  #editamos leyenda
+      theme_minimal() + theme(axis.text.x = element_text(size = 7.5))
+  })
+  names(bar_plots) <- paste("bar_plots", var_type)
+  return(bar_plots)
+}
+
+#Generar gráficos de barras para cada tipo de variable
+bar_plots_binary <- generate_bar_plots(binary_variables[c(1,14)], mydiabetes, "binary")
+bar_plots_numeric <- generate_bar_plots(numeric_variables[1:2], mydiabetes, "numeric")
+bar_plots_factor <- generate_bar_plots(factor_variables[2:3], mydiabetes, "factor")
+
+#Combinar gráficos en una cuadrícula
+grid.arrange(grobs = c(bar_plots_binary, bar_plots_numeric, bar_plots_factor), ncol = 2)
+```
+
+Los resultados muestran que, tenemos la misma cantidad de diabéticos que de no diabéticos por lo que las clases están balanceadas. 
+
+Por otro lado, observamos mayor cantidad de personas que tienen presión arterial alta (valor 1 en HighBP) y de estos hay casi el triple de proporción de diabéticos que en personas con presión arterial normal. 
+En cuanto al sexo, se ha entrevistado un número ligeramente mayor de mujeres que de hombres y mas o menos la misma proporción de diabéticos en ambos sexos. 
+El índice de masa corporal, indica que cuanto más aumenta su valor, mayor es la proporción de diábeticos respecto a no diabéticos. 
+Respecto al número de días en el último mes que se han notado los pacientes enfermedades mentales o emocionales, la mayoría no se han notado y en estos la proporción de diabeticos y no diabeticos es la misma. Llama la atención que de los que se lo han notado  todo el mes, hay mayor proporción de diabéticos que de no diabéticos.
+En cuanto a la edad, la mayor proporción de diabéticos es encontrada del rango 9-11, es decir, entre los 60 y los 75 años de edad.
+Respecto a la educación, aunque hay menor número total, se registra mayor proporción de diabetes para personas que se quedaron en formacion escolar y/o secundaria.
+
+Dicho esto podríamos pensar que personas de edad avanzada, con presión arterial alta, un alto BMI, tendencia a la enfermedad mental y bajo nivel académico podría tener más riesgo de padecer diabetes. 
+
+Para llegar a conclusiones más sólidas debemos estudiar las variables en conjunto a través de nuestro modelo.
+
+
+## - Supón que los posibles sesgos pudieran estar representados por los predictores del dataset. ¿Podríamos determinar visual y numéricamente, con ayuda de PCA si los hay?
+
+Como hemos comprobado en los dos datasets anteriores, podemos usar PCA para la reformulación del problema, representando componentes y variables en una nube de puntos donde se ven patrones. Visualizamos el resultado del PCA para inteerpretar y compactamos para hacer algoritmos de M.learning mas simples. En este caso, por la propia definición de PCA no debemos incluir las variables discretas, debido a las diferencias fundamentales en la naturaleza de las variables y las suposiciones subyacentes del PCA. Por tanto, usamos "BMI", "MentHlth" y "PhysHlth" para detectar posibles sesgos o patrones por medio de "heatmap".
+
+
+```{r echo=FALSE}
+pca.diabetes <- prcomp(mydiabetes[,c(5, 16, 17)], scale = TRUE)
+df_pca.diabetes <- as.data.frame(pca.diabetes$x[, 1:2])
+pc_scores.diabetes <- pca.diabetes$x
+correlation_pc.diabetes <- cor(mydiabetes[,c(5, 16, 17)], pca.diabetes$x[,1:3])
+colors <- colorRampPalette(c("blue", "white", "red"))(100)
+heatmap.2(correlation_pc.diabetes,
+          scale = "none",
+          col = colors,
+           margins=c(8,10),
+          main = "Heatmap PC - Predictores")
+summary(pca.diabetes)
+```
+
+Para analizar los resultados del heatmap, debemos tener en cuenta que ha sido realizado con solo 3 variables, por lo tanto la variabilidad capturada por las componentes será respecto a la variabilidad total recogida solo por la combinación de esas 3 variables.
+
+Dicho esto, se aprecian fuertes correlaciones positivas de las 3 variables con las dos primeras componentes, lo que indica que podremos ver patrones claros de valores altos concentrados en la parte mas alta de la componente 2 y la parte más hacia la derecha de la componente 1.
+Esto se puede apreciar mejor en la siguiente representación, donde coloreamos la nube de puntos según la distribución de las variables "BMI" y "MentHlth" en las dos primeras componentes.  
+
+
+```{r echo=FALSE}
+predictores <- colnames(mydiabetes)[c(5, 16)] 
+gradient_plots <- list()
+for (predictor in predictores) {
+  pca.diabetespluspred = cbind.data.frame(State = mydiabetes[[predictor]], pc_scores.diabetes)
+  gradient.plot <- ggplot(pca.diabetespluspred, aes(PC1, PC2, color=State, fill=State)) + 
+  modelr::geom_ref_line(h = 0) +
+  modelr::geom_ref_line(v = 0) +
+  geom_point() +
+  xlab("PC1") + 
+  ylab("PC2") + 
+  ggtitle("Primeros PC de Diabetes-BRFSS", predictor)
+  gradient_plots[[predictor]] <- gradient.plot
+
+}
+grid.arrange(grobs = gradient_plots, ncol = 2, nrow = 1)
+```
+
+Como ya hemos comentado, se vuelve a repetir que, por el contexto del problema, no parece que la influencia de estas variables en dichas componentes sea de forma artefactual y además no parece que el efecto del sesgo pueda ser significativo puesto que, la varianza recogida no es base al conjunto de variables o a una gran mayoría de ellas.
+
+
+## - ¿Qué algoritmo de entre los que conoces aplicarías según el problema para el que lo has identificado?
+
+En este caso, la variable a predecir de nuevo es de tipo factor o de clase, por lo que vamos a utilizar un modelo de predictores de distintos tipos (en su mayoría discretos y binarios) para clasificar las observaciones (personas) en diábetico o no diábetico (variable "Diabetes_binary"). 
+
+Dicho esto, el algoritmo escogido será Naive Bayes (necesidad del paquete "naive_bayes") debido a que, tenemos una enorme cantidad de ejemplos y es muy practico: balance entre dificultad y coste computacional muy favorable. 
+
+Además, el algoritmo se basa en estimar la probabilidad de que un objeto pertenezca a una clase u otra y me quedo con el mas probable asumiento distribuciones de probabilidad independientes entre variables. Por tanto, funciona mucho mejor para variables discretas (nuestro caso) que para continuas ya que, para estas últimas deberíamos saber sus distribuciones de probabilidad y estimarlas se vuelve complejo. 
+
+El objetivo será buscar el modelo que mejor precisión alcance a la hora de encontrar el vector de características que maximice la separación de las dos clases en la variable respuesta.  
+
+
+## - ¿Sería necesario aplicar alguna transformación a los datos? ¿Por qué? Si la respuesta es afirmativa, explica qué tendría de beneficioso hacerlo
+
+Como bien sabemos, debemos transformar los datos cuando existe presencia de datos nulos, datos inconsistentes, datos ruidosos o datos con poca o nula varianza.
+
+
+```{r}
+#Comprobamos que no hay valores nulos reconocidos por R
+sum(is.na(mydiabetes))
+#Detección de variables con varianza cercana a 0
+nzv.diabetes <- nearZeroVar(mydiabetes)
+nzv.diabetes
+#Retiramos variables con varianza cercana a 0
+mydiabetes.opt <- mydiabetes[,-nzv.diabetes]
+```
+En este tercer dataset, haciendo exploraciones similares a los casos anteriores, vemos que existen 3 variables cuya varianza es cercana a 0, que son chequeo por colesterol "CholCheck" , consumo alto de alcohol "HvyAlcoholConsump" y presencia de seguro médico "AnyHealthcare". 
+Dicho con otras palabras, estas 3 variables prácticamente no van influir en el vector de características que maximiza la separación entre las dos clases a predecir y en consecuencia las vamos a retirar.
+
+Además, no hay valores nulos, inconsistencias y datos fuertemente ruidosos, por lo que prescindir de las variables comentadas será la única modificación que haremos antes dirigirnos al entrenamiento del modelo.
+
+Por último, podríamos optar por normalizar las variables numéricas pero no lo haremos ya que el  algoritmo "naive_bayes" no se ve afectado ya que asume que las probabilidades son independientes.
+
+
+## - Aplica el algoritmo designado en la pregunta 5 y optimiza el estadístico o estadísticos que consideres pertinente para medir su rendimiento mediante la selección de un modelo óptimo. Comenta los resultados
+
+En primer lugar, procedemos a explorar la información del algoritmo. El algoritmo Naive Bayes (naive_bayes) presenta otros 3 hiperparámetros. 
+En concreto, nos encontramos con la corrección de Laplace (**laplace**) donde se agrega una pequeña cantidad (por lo general 1) a todas las frecuencias de ocurrencia de cada atributo para cada clase con el fin de evitar problemas de probabilidad 0 en el modelo, el tipo de distribución (**usekernel**) donde se se utiliza una estimación de la densidad kernel para modelar la distribución de los datos y el ajuste de ancho de banda (**adjust**) que determina el ancho de banda para la estimación de la densidad kernel, por lo que solo tendrá efecto si "usekernel = TRUE". 
+
+
+```{r}
+library(naivebayes)
+modelLookup("naive_bayes")
+```
+
+
+Respecto a los valores de los hiperparámetros: 
+
+- Laplace agrega un valor constante a las frecuencias observadas de cada clase y predictor para evitar estimaciones de probabilidad de cero. Este hiperparámetro generalmente toma valores enteros no negativos, donde un valor más alto de Laplace suaviza más las probabilidades.
+
+- Valores más bajos de "Adjust" resultarán en una distribución más suave, mientras que valores más altos darán lugar a una distribución más ajustada.
+
+- El parámetro "usekernel" es booleano, es decir, solo adquiere valor TRUE o FALSE. En este sentido, establecer "usekernel" en TRUE significa que el algoritmo asumirá distribuciones de características continuas y utilizará un estimador de densidad de kernel, mientras que establecerlo en FALSE significa que asumirá distribuciones de características discretas y calculará las probabilidades basadas en frecuencias. 
+
+
+El próximo será realizar la partición antes de realizar el proceso de entrenamiento, realizaremos la misma partición considerada en datasets anteriores (80% para train y 20% para test) y con el mismo procedimiento. Como vemos, quedan repartidas 28277 observaciones de cada clase para train y 7069 de cada clase para test.
+
+```{r}
+set.seed(897)
+diabetes.TrainIdx.80 <- createDataPartition(mydiabetes.opt$Diabetes_binary,
+                                       p=0.8,
+                                       list = FALSE,
+                                       times = 1) 
+
+
+diabetes.Datos.Train<-mydiabetes.opt[diabetes.TrainIdx.80,]
+diabetes.Datos.Test<-mydiabetes.opt[-diabetes.TrainIdx.80,]
+table(diabetes.Datos.Train$Diabetes_binary)
+table(diabetes.Datos.Test$Diabetes_binary)
+```
+
+Teniendo divididos los datos, una vez más tendremos que buscar la mejor combinación de hiperparámetros del algoritmo. Para ello, debemos considerar por ejemplo que el valor más óptimo del hiperparámetro "usekernel" será FALSE ya que, contamos en su mayoría con variables discretas, por lo que la estimación de probabilidades será en base a frecuencia. 
+
+En consecuencia, ya sebemos que el parámetro "adjust" no tendrá ningún efecto en los valores de las métricas de calidad "accuracy" y "kappa" por lo que pondremos valor por defecto 1. En cuento a Laplace, probaremos valores de 0 a 3.
+
+
+```{r}
+nb.mygrid.diabetes = expand.grid(laplace = 0:3,
+                               usekernel = FALSE,
+                               adjust = 1)
+
+set.seed(462)
+nb.Control.diabetes <- trainControl(method = "cv", 
+                     number = 10,
+                     verboseIter = FALSE,
+                     allowParallel = TRUE)
+                     
+set.seed(897)
+system.time(nbFit.diabetes <- train(Diabetes_binary ~ ., data = diabetes.Datos.Train,
+                                     method = "naive_bayes",
+                                     trControl = nb.Control.diabetes,
+                                     tuneGrid=nb.mygrid.diabetes))
+                 
+nbFit.diabetes
+```
+
+Como podemos observar, los resultados muestran un valor de accuracy de 0.71 aproximadamente que podemos considerar aceptable y el valor de kappa (más restrictivo) es menos favorable.
+
+Debemos tener en cuenta que aunque el "kappa" es una medida más robusta, el "accuracy" podría resultar engañoso cuando las clases no están bien balanceadas porque también podría estar clasificando una clase en concreto por ser la mayoritaria. En este caso, por tanto, no tenemos motivos para desestimarlo.
+
+Además, vemos que el parámetro Laplace no ejerce ningún efecto sobre las medidas de calidad (se puede ver tanto numéricamente como en la representación gráfica) y puede ser debido a factores como: un conjunto de datos grande y diverso (se cumple), categorías bien representadas (se cumple), bajo desbalance de clases (se cumple) y características independientes (se cumple en cierta medida).
+
+
+```{r}
+ggplot(nbFit.diabetes)
+```
+Como último paso, al tratarse de un problema de clasificación, recurrimos a los resultados de la matriz de confusión. 
+
+
+```{r}
+diabetes.predict <- predict(nbFit.diabetes,newdata = diabetes.Datos.Test)
+diabetes.conf.matrix <- confusionMatrix(diabetes.predict, diabetes.Datos.Test$Diabetes_binary, positive = "1")
+diabetes.conf.matrix
+```
+
+Lo mas destacable de la matriz es que el modelo comete errores con la misma frecuencia mas o menos en ambas clases.
+
+Además, como ya sabíamos tenemos una prevalencia de ambas clases del 50% (clases balanceadas).
+Por otro lado, vemos también un p-value muy significativo y como ya sabemos, el valor p indica que la precisión del modelo es significativamente mayor que el error esperado al azar (NIR). Cuanto más pequeño sea el p valor, más fuerte es la evidencia en contra de la hipótesis nula de que el rendimiento del modelo no es mejor que el error esperado al azar.
+Tenemos también valores altos de especificidad y sensibilidad que son favorables para aceptar el modelo clasificatorio.
+
+Por último, en cuanto al test de McNemar, destacar que estamos comparando clasificación real con la realizada por nuestro clasificador entrenado con Naive Bayes y la hipótesis nula es que ambos clasifican igual. En base a esto y al tratarse de un problema de clasificación binaria, podemos aplicar el valor del test y en este caso, dado que el p valor es superior a 0.05, no podemos rechazar la hipotesis nula y por tanto, de nuevo confirmamos que no hay evidencia de que la clasificación se de forma distinta a como ocurre en la realidad.
+
+Concluimos por tanto, que nuestro modelo entrenado y evaluado con Naive Bayes ha sido capaz de encontrar una distribución de probabilidad óptima mediante la cual clasifica la clase más probable con un índice de acierto  y un tiempo de ejecución más que aceptable.
+
+
+# Conclusión
+
+A modo de conclusión general, destacar que durante la realización de este documento, hemos podido poner en práctica algunas de las técnicas impartidas en clase relacionadas con apredizaje automático supervisado, en concreto regresión y clasificación.
+
+Para ello, hemos hecho uso de dos de los algoritmos introductorios a esta área de machine learning, que son "K vecinos más cercanos" y "Naive bayes", los cuales hemos optimizado a base de probar combinaciones de los diferentes hiperparámetros que poseen.
+
+Además, hemos sido capaces de detectar posibles sesgos indeseables en nuestro dataset y hemos explorado la distribución de valores de los diferentes atributos, además de la variable objetivo.
+
+Con todo hemos sido capaces de desarrollar modelos de regresión y clasificación que predicen el valor de la variable respuesta de una forma más o menos aceptable en los 3 casos de estudio y hemos interpretado las conclusiones de la manera más precisa posible.
+
+
+
+
+
+

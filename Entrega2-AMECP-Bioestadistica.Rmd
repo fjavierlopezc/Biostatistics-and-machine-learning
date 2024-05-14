@@ -1,0 +1,473 @@
+---
+title: "Entrega 2 - AMECP - Bioestadística"
+author: "Francisco Javier López Carbonell"
+date: "16/12/2023"
+output:
+  html_document:
+    toc: yes
+    toc_depth: 2
+    warning: no
+    toc_float: yes
+    collapsed: yes
+    smooth_scroll: yes
+    highlight: kate
+    df_print: paged
+    theme: simplex
+    code_folding: show
+  pdf_document: 
+    toc: yes
+    toc_depth: 2
+---
+
+**EJERCICIO 2**
+
+En primer lugar, configuramos nuestro directorio de trabajo.
+
+```{r}
+getwd()
+setwd("C:/Users/Javi2/OneDrive/Escritorio/Entrega2-Bioestadistica")
+```
+
+### En un estudio sobre el efecto de la radicación en las alteraciones cromosómicas de linfocitos humanos, se registraron los valores experimentales de las variables (cells=número de células en cientos, ca=número de alteraciones cromosómicas, doseamt=cantidad de dosis de exposición in vitro a radiacción gamma, doserate=tasa de dosis de radiacción por hora) cuyos datos observados se encuentran en la base de datos dicentric de la librería faraway. Ver más detalles de los datos en RStudio mediante: ?dicentric. Con el objetivo de analizar la cantidad de alteraciones cromosómicas (ca) a través del resto de características registradas en el experimento: 
+
+
+```{r}
+library(faraway)
+?dicentric
+```
+
+Observamos que que el estudio consta de 27 observaciones sobre las siguientes 4 variables donde se han estudiado efectos de las dosis de radiación en las anomalías cromosómicas.
+
+Procedemos a elaborar una pequeña tabla que facilite las variables que vamos a incluir en nuestro modelo.
+
+```{r}
+library(knitr)
+
+datos_tabla <- data.frame(
+  Nombre_variable = c("cells", "ca", "doseamt", "doserate"),
+  Descripcion_variable = c("número de células en cientos", "número de alteraciones cromosómicas", "cantidad de dosis de exposición in vitro a radiacción gamma", "tasa de dosis de radiacción por hora")
+)
+kable(datos_tabla, format = "markdown")
+```
+
+## (a) Establecer un modelo para pronosticar el número de alteraciones cromosómicas a partir de las variables disponibles en la base de datos, determinar el modelo con las variables más relevantes.
+
+A continuación, tras observar que tenemos un conjunto de variables que podrían llegar a explicar el comportamiento de una variable respuesta, vamor a realizar un **modelo de regresión lineal múltiple** que representa la relación entre la variable respuesta Y (en este caso, ca) y un conjunto de variables predictoras (X1, ...,Xk), que en este caso serán cells, doseamt, doserate. El objetivo será pronosticar los valores de la respuesta a través de este modelo.
+
+```{r}
+library(faraway)
+attach(dicentric) #extraemos datos de la base dicentric
+#Regresión lineal múltiple -> usamos función lm con las 3 varaibles usadas para predecir la respuesta
+model.regre1 <- lm(ca ~ cells + doseamt + doserate)  
+summary(model.regre1)
+```
+El modelo con todas las variables introducidas como predictores tiene un valor de R cuadrado ajustado (0.4588), es capaz de explicar el 45,88% de la variabilidad observada en el número de alteraciones cromosómicas. 
+El p-value del modelo es significativo (0.0006183) por lo que se puede aceptar que el modelo no es por azar. Todas las variables predictoras son significativas, lo que es un indicativo de que todas ellas contribuyen al modelo y eliminar alguna puede significar una pérdida relevante de variabilidad explicada.
+
+A la hora de seleccionar los predictores que deben formar parte del modelo se pueden seguir varios métodos: método jerárquico, método de entrada forzada o método de paso a paso (stepwise). Nosotros usaremos este último, donde podemos optar por varias estrategias(forward, backward o doble(mixto). 
+
+En concreto, usaremos stepwise mixto, caracterizado por la combinación de ir incluyendo predictores 1 a 1 si mejoran el modelo anterior (forward) y en cada nueva incorporación se realiza un test de extracción de predictores no útiles (backward).
+
+Nos podemos basar en varios criterios matemáticos para determinar si el modelo mejora o empeora con cada incorporación o extracción, el elegido será AIC ya que suele ser mas restrictivo. En R la función step() permite encontrar el mejor modelo basado en AIC.
+
+```{r}
+step(object = model.regre1, direction = "both", trace = 1)
+
+```
+
+La función step() podría devolvernos más de un modelo de selección de predictores, aunque en este caso solo nos devuelve uno basado en la inclusión de todas las variables descriptoras disponibles, por lo que en principio no eliminamos ningún predictor para nuestro modelo.
+
+Por tanto, el modelo seleccionado será el que incluye todas las variables predictoras como factores de riesgo para la variable respuesta (número de alteraciones cromosómicas).
+
+Además de el p-value tanto del modelo en conjunto como de las variables predictoras individualmente ya comentado anteriormente, resulta interesante analizar la estimación del error residual (sigma) y la tasa de error a la hora de evaluar un modelo de regresión lineal.
+
+El **RSE** proporciona una medida de error en la predicción por parte del modelo, es decir, cuanto más bajo sea su valor, mejores predicciones de la variable respuesta nos dará el modelo. En este sentido si dividimos este valor entre el valor medio de la variable respuesta obtenemos la tasa de error por cada valor predicho por el modelo.
+
+```{r}
+#Funcion sigma() para extraer el error residual estándar de lm
+rse=sigma(model.regre1)
+rse
+rse/mean(dicentric$ca)
+```
+Si la tasa de error es pequeña, es una indicación positiva de que el modelo está proporcionando un buen ajuste en relación con la escala media de la variable respuesta.
+En este caso no lo es, con valor de RSE de 54.0454 correspondiendo a una tasa de error alta del 44.87%. Esta tasa de error puede guardar relación con el tamaño muestral por lo que aumentando el número de observaciones podríamos aumentar la eficacia de predicción.
+
+Por otro lado, también resulta interesante mostrar el intervalo de confianza para cada uno de los coeficientes parciales de regresión, donde si el intervalo de confianza es estrecho, sugiere que la estimación del coeficiente es precisa. Si es amplio, la estimación es menos precisa. Además, si el intervalo de confianza no incluye el valor cero, se podría argumentar que hay evidencia de que el coeficiente no es cero (es decir, que la variable tiene un efecto significativo).
+
+```{r}
+confint(model.regre1)
+```
+En este caso, tenemos algunos intervalos confianza amplios como el de doseamt y doserate, por lo que la estimación de esos coeficientes no es muy precisa. Por otro lado, ningan variable incluye el 0, por lo que esto apoya la evidencia de efecto significativo de las variables que nos muestra el p-value.
+
+Por último, mencionar que, en regresión lineal múltiple es posible encontrarnos con un aspecto muy a tener en cuenta y es la multicolinealidad de variables.
+La **multicolinealidad** ocurre cuando las variables independientes en un modelo de regresión están correlacionadas.
+Esta correlación es un problema porque las variables independientes deberían ser independientes. Si el grado de correlación entre las variables es lo suficientemente alto, puede causar problemas al ajustar el modelo e interpretar los resultados.
+
+Para evaluar la multicolinealidad analizamos lo que se denomina inflación de varianza (VIF), es decir, donde se evalúa con que factor cada variable predictora influye en la multicolinealidad. En concreto, cuanto mayor sea el VIF, mayor será la multicolinealidad. Un VIF superior a 5 o 10 a menudo se considera una señal de multicolinealidad significativa. Lo ideal es maneternos en torno a la unidad como valor de VIF.
+
+```{r}
+library(car)
+vif(model.regre1)
+```
+
+Obtenemos un valor de VIF aceptable en este caso, por lo que no tenemos problema de multicolinealidad de variables.
+
+Aun así y a modo de contraste, vamos a evaluar dos posibles modelos eliminando la variable con el valor de VIF mas alto (cells).
+
+```{r}
+model.regre2 <- lm(ca ~ doseamt + doserate)
+summary(model.regre2)
+```
+
+Vemos que, el modelo empeora significativamente observando el coeficiente de determinación, perdiendo mas de la mitad de variabilidad explicada (adjusted R-squared) respecto al modelo inicial.
+Además, aumenta el RSE y la variable doserate deja de tener un efecto dignificativo según este modelo, lo descartamos de inmediato.
+
+Dicho esto, nuestro modelo de regresión lineal seleccionado listo para validar es:
+
+**ca = -74.15392 + 0.06871cells + 41.33160doseamt + 20.28402doserate**
+
+## (b) Estudiar la validez del modelo estimado.
+
+Además, el desarrollo del análisis del modelo de regresión (la estimación del modelo, los contrastes de significación y la predicción de la respuesta) requiere de unas ciertas condiciones que deben mantenerse, garantizando la aleatoriedad de los individuos observados y su representatividad en la población bajo estudio. 
+Esto es precisamente lo que vamos a evaluar mediante test estadísticos para validar el modelo. 
+
+Las condiciones iniciales que han de cumplirse son: linealidad, homogeneidad de varianzas, incorrelación y normalidad.
+
+Además, todo ello debe ir acompañado de un análasis gráfico de los residuos (diferencias entre los valores observados y los valores predichos por el modelo).
+En concreto, se  procede a la identificación de observaciones atípicas o influyentes que pueden afectar significativamente los resultados del análisis.
+Estos análisis son importantes para garantizar la robustez y la confiabilidad de los resultados obtenidos a partir del modelo.
+
+
+```{r}
+par(mfrow = c(2, 2))
+plot(model.regre1)
+```
+
+**Intrepretación de representaciones gráficas**
+
+
+A -> **Residuals vs Fitted:** representación de la nube de puntos de los risudos estandarizados frente los valores predichos por el modelo, para evaluar linealidad. En este caso, vemos claramente falta de linealidad en el modelo. Además. el gráfico nos incluye las observaciones mas dispersos y que afectan por tanto más a la desviación de linealidad (22, 23, 25).
+
+B -> **Normal Q-Q:**este gráfico compara los cuantiles de los residuos con los cuantiles teóricos de una distribución normal. De nuevo, vamos desviación extrema en las observaciones 22, 23 y 25 aunque por lo general la nube de puntos se proxima a una normal.
+
+C -> **Scale-Location:** esta representación ayuda a identificar observaciones influyentes. Puntos lejanos en el eje y pueden indicar observaciones con un alto impacto en el modelo. De nuevo, tenemos observaciones 22, 23 y 25 como las mas influyentes.
+
+D -> **Leverage vs Residuals:**representación de observaciones en base a su valor leverage basado en distancia de cook y  residuos estandarizados. Observaciones con alto leverage y alto residuo estandarizado pueden ser influyentes indicadas en el gráfico: 9, 19 y 25.
+
+E -> **Residuals in sample order:**Este gráfico te permite identificar patrones sistemáticos o comportamientos inusuales en los residuos a medida que avanzas a lo largo de las observaciones. Si vemoss patrones claros, como agrupamientos o cambios abruptos, podría indicar que hay aspectos específicos de tus datos que no están siendo capturados adecuadamente por el modelo. Las observaciones mencionadas anteriormente de nuevo se muestran en el gráfico como las más influyentes.
+
+```{r}
+plot(residuals(model.regre1),type="o"); abline(h=0)
+```
+
+**Análisis de linealidad**
+
+Debe haber una relación lineal entre las variables dependientes e independientes. Esta condición se puede validar bien mediante diagramas de dispersión entre la variable dependiente y cada uno de los predictores (como se ha hecho en el análisis preliminar) o con diagramas de dispersión entre cada uno de los predictores y los residuos del modelo. Si la relación es lineal, los residuos deben de distribuirse aleatoriamente en torno a 0 con una variabilidad constante a lo largo del eje X.
+
+```{r}
+library(ggplot2) 
+library(gridExtra) 
+plot1 <- ggplot(data= dicentric, aes(cells, model.regre1$residuals)) + geom_point() + geom_smooth(color = "firebrick") + geom_hline(yintercept = 0) + theme_bw() 
+plot2 <- ggplot(data = dicentric, aes(doseamt, model.regre1$residuals)) + geom_point() + geom_smooth(color = "firebrick") + geom_hline(yintercept = 0) + theme_bw() 
+plot3 <- ggplot(data = dicentric, aes(doserate, model.regre1$residuals)) + geom_point() + geom_smooth(color = "firebrick") + geom_hline(yintercept = 0) + theme_bw()
+grid.arrange(plot1, plot2, plot3)
+```
+
+En este caso, observamos una distribución aleatoria de los residuos en torno a lo largo del eje X en torno a 0, por lo que *se cumple el criterio de linealidad para todas las variables* evaluadas.
+
+**Análisis de homocedascitidad**
+
+La homocedasticidad establece que la varianza de los errores o residuos debe ser constante para todos los valores de las variables predictoras o independientes. Esto significa que la dispersión de los residuos alrededor de la línea de regresión debe ser similar en toda la gama de valores de las variables predictoras. 
+La forma de evaluarla en este cado será mediante la función bptest() (test de Breusch-Pagan) para la homocedasticidad. Esta función toma como entrada un modelo de regresión y devuelve el resultado de la prueba de hipótesis para la homocedasticidad de los residuos. En este estadístico, la hipotesis nula establece que hay homogeneidad de varianza para los errores.
+
+```{r}
+library(lmtest)
+bptest(model.regre1)
+```
+
+Atendiendo al criterio establecido anteriormente, p-value supera 0.05, por lo que no hay evidencias para rechazar la hipótesis nula. En este sentido, asumimos que los residuos tienen varianza constante.
+
+
+**Analisis de normalidad**
+
+Existen varias formas de analizar la normalidad de los residuos, como ya hemos comentado se puede analizar gráficamente observando que tan bien se ajusta la nube de puntos a una distribución normal o realizando test estadísticos que evaluen la normalidad. En nuestro caso, tenemos un tamaño de muestra menor de 50 observaciones (27 observaciones) por lo que el test adecuado será Shapiro-Wilk.
+
+
+```{r}
+qqnorm(model.regre1$residuals)
+qqline(model.regre1$residuals)
+```
+
+El test de Shapiro-Wilks plantea la hipótesis nula que una muestra proviene de una distribución normal y tenemos una hipótesis alternativa que sostiene que la distribución no es normal.
+
+
+```{r}
+shapiro.test(model.regre1$residuals)
+```
+En nuestro caso, rechazamos la hipotesis nula por lo que no hay evidencias de normalidad, aunque las observaciones de los residuos parecen aproximarse en su mayoría a la distribución normal. 
+De hecho, si nos fijamos se observa un dato claramente candidato a ser outlier, excesivamente alejado de la distribución. Por tanto, procedemos a evaluar normalidad sin tenerlo en cuenta por si influyese determinantemente en el valor de p-value del test realizado.
+
+```{r}
+which.max(model.regre1$residuals)
+```
+
+```{r}
+shapiro.test(model.regre1$residuals[-25])
+```
+Efectivamente, se confirma que los residuos sí se distribuyen de forma normal a excepción de un dato extremo. Es necesario estudiar en detalle la influencia de esta observación para determinar si el modelo es más preciso sin ella.
+
+**Analisis de incorrelación**
+
+Para analizar esta condición, usamos el estadístico de Durbin-Watson, basado en las autocorrelaciones entre residuos adyacentes, y bajo la hipótesis nula de incorrelación. El estadístico D tiene una distribución simétrica centrada en el punto 2 y acotada en el intervalo (0, 4). Así, el valor del estadístico D próximo a los extremos del intervalo indica una tendencia de autocorrelación (positiva o negativa, según la asimetría) y un valor próximo a 2 no detectaría una falta de incorrelación.
+
+```{r}
+library(car) 
+dwt(model.regre1, alternative = "two.sided")
+```
+
+Siguiendo el criterio proporcionado, obtenemos un valor del estadístico D ~ 2, por lo que no hay evidencia de autocorrelación en este caso. 
+
+**Analisis de valores atípicos **
+
+```{r}
+library(car)
+outlierTest(model.regre1)
+```
+
+Tal como se apreció en el estudio de normalidad de los residuos, la observación 25 tiene un residuo estandarizado >3 (más de 3 veces la desviación estándar de los residuos), por lo que se considera un dato atípico. El siguiente paso es determinar si es influyente.
+
+```{r}
+summary(influence.measures(model.regre1))
+```
+
+```{r}
+influencePlot(model.regre1)
+```
+
+El análisis muestra varias observaciones influyentes, aunque ninguna excede los límites de preocupación para los valores de Leverageshat(>2.5) o Distancia Cook(>1). Estudios más exhaustivos consistirían en rehacer el modelo sin las observaciones y ver el impacto.
+
+Debemos tener en cuenta que, la exclusión de observaciones debe tener una justificación sólida y estar respaldada por un entendimiento adecuado del problema y los datos. 
+En nuestro caso, tras los analisis de condiciones inciales del modelo de regresion lineal múltiple de los residuos nos lleva a a la decisión de analizar la exclusión de ciertas observaciones a priori influyentes en el ajuste de bondad del modelo.
+
+Tras quitar varios outliers y analizar la predicción del modelo en el apartado c del ejercicio, obtenemos no solo que no predice bien el resultado, sino que no incluye el valor real dentro del intervalo de confianza de los valores predichos, por lo que descartamos dichos modelos. No incluyo los analisis por no alargar demasiado el informe.
+
+Por tanto, en una búsqueda por optimizar nuestro modelo inicial, vamos a recurrir a una transformación de los datos. Dichas transformaciones suelen ser comunes cuando no se cumple una o mas condiciones iniciales del modelo de regresión lineal o cuando se desea ver si existen relaciones lineales de alguna variable en el espacio logarítmico.
+
+La elección depende de la distribución de nuestros datos y de la relación que esperas entre las variables. Es importante recordar que la interpretación de los resultados también se verá afectada por estas transformaciones, por lo que debemos ajustar su interpretación en consecuencia. 
+
+En nuestro caso, tras realizar varias pruebas y desecharlas como estandarización, inversa de las variables o raices cuadradas nos hemos decantado por explorar el modelo en escala logarítmica.
+
+**Análisis de modelo en escala logarítmica**
+
+```{r}
+log.model <- lm(log(ca) ~ log(cells) + log(doseamt) + log(doserate), data = dicentric) 
+summary(log.model)
+```
+
+El modelo con todas las variables introducidas como predictores **tomando logaritmos** incrementa el valor de R cuadrado ajustado (0.9251), ahora es capaz de explicar el 92.51% de la variabilidad observada en el logaritmo del número de alteraciones cromosómicas, es decir,  ahora la interpretación se hace como cambio porcentual en la variable dependiente. Por ejemplo, coeficiente de regresión para el logaritmo de cells de 0.9 indica que si dicha variable varía un 1% , la variable respuesta variará un 0.9%, siendo el resto constantes.
+
+El p-value del modelo es mucho más significativo (1.071e-13) por lo que se puede aceptar que el modelo no es por azar. Todas las variables predictoras son más significativas en valor, indicativo de que todas ellas contribuyen al modelo de forma mas relevante y no cabe plantearse la eliminación de alguna de ellas.
+
+Hacemos de nuevo stepwise, para confirmar si es adecuado no eliminar variables de acuerdo a su AIC (se confirma modelo con todas las variables).
+
+```{r}
+step(object = log.model, direction = "both", trace = 1)
+```
+
+Analizamos de nuevo el RSE y vemos que es muy bajito en términos de variables logaritmizadas. Por tanto, optenemos mayor capacidad de predicción de la variable respuesta por parte del modelo.
+
+```{r}
+#Funcion sigma() para extraer el error residual estándar de lm
+rse.log=sigma(log.model)
+rse.log
+rse.log/mean(dicentric$ca)
+```
+
+
+Por otro lado, mostramos los intervalos de confianza al 95% como hemos realizado en el modelo anterior.
+
+```{r}
+confint(log.model)
+```
+
+En este caso, vemos que intervalos confianza que eran amplios como el de doseamt y doserate ahora se reducen en amplitud considerablemente, haciendo la estimación de los coeficientes más precisa.
+
+Además, evaluamos de nuevo multicolinealidad, donde vemos que valores de algunas variables suben según el criterio anteriormente mencionado (no superar valor de  VIF 5), aunque no es excesivamente alto, es algo que debemos tener en cuenta cuando analicemos la predicción del modelo. 
+
+A veces, aunque las variables individuales estén altamente correlacionadas (multicolinealidad), el efecto conjunto de las variables en la predicción podría ser informativo. El modelo puede estar capturando la relación global entre las variables de manera efectiva, por lo que seguimos analizando.
+
+```{r}
+vif(log.model)
+```
+
+Dicho esto, nuestro modelo de regresión lineal múltiple en escala logarítmica listo para validar es:
+
+**ln(ca) = -2.13918 + 0.91453ln(cells) + 1.61398ln(doseamt) + 0.19666ln(doserate)**
+
+**Análisis de validez de modelo logarítmico**
+
+En cuanto al analisis gráfico de la nube de puntos de los residuos, en este caso hay otras observaciones que se desvían indicadas en cada gráfico, que es lo que cabría esperar al cambiar el modelo. 
+Lo importante es ver como afectan esas desviaciones a las predicciones de la variable respuesta y si se mantienen las condiciones iniciales del modelo de regresión lineal múltiple.
+
+```{r}
+par(mfrow =c(2, 2))
+plot(log.model)
+```
+
+**Linealidad**
+
+```{r}
+library(ggplot2) 
+library(gridExtra)
+dicentric.ex = dicentric
+plot1.ex <- ggplot(data= dicentric.ex, aes(cells, log.model$residuals)) + geom_point() + geom_smooth(color = "firebrick") + geom_hline(yintercept = 0) + theme_bw() 
+plot2.ex <- ggplot(data = dicentric.ex, aes(doseamt, log.model$residuals)) + geom_point() + geom_smooth(color = "firebrick") + geom_hline(yintercept = 0) + theme_bw() 
+plot3.ex <- ggplot(data = dicentric.ex, aes(doserate, log.model$residuals)) + geom_point() + geom_smooth(color = "firebrick") + geom_hline(yintercept = 0) + theme_bw()
+grid.arrange(plot1.ex, plot2.ex, plot3.ex)
+```
+
+En este caso, de la misma manera que en el modelo anterior, se cumple el criterio de linealidad para las 3 variables predictoras, distribuyendose de forma uniforme en torno a 0 a lo largo del eje x para todas las variables.
+
+```{r}
+```
+
+**Incorrelacion**
+
+```{r}
+library(car) 
+dwt(log.model, alternative = "two.sided")
+```
+
+Según el criterio establecido, en este caso se nos reduce el estadistico D-W un poquito, aproximandose mas al extremo del intervalo (0,4), lo cual indica cierta autocorrelación positiva respecto al modelo anterior. 
+
+**Normalidad**
+
+Ya analizada anteriormente, en este caso si hay normalidad en la distribucion de los residuos.
+
+```{r}
+qqnorm(log.model$residuals) 
+qqline(log.model$residuals)
+```
+
+```{r}
+shapiro.test(log.model$residuals)
+```
+
+No rechazamos hipotesis nula de que existe normalidad, por lo que no hay evidencias para descartar que no la haya. La asumimos por tanto en este caso.
+
+**Homocedasticidad**
+
+De igual manera que el anterior modelo, usamos test de Breusch-Pagan, donde la hipotesis nula recordamos que es ausencia de homocedasticidad, es decir, heterogeneidad de varianza.
+
+```{r}
+library(lmtest)
+bptest(log.model)
+```
+
+P-value>0.05, por lo que rechazamos H0, dando lugar a asumir que la varianza de los errores es constante.
+
+
+**Analisis de valores atípicos **
+
+Obtenemos de nuevo un outlier, pero ninguna excede los límites de preocupación para los valores de Hat (>2.5) o Distancia Cook(>1). La transformación logarítmica aplicada a las variables no afecta directamente la interpretación de estos estadísticos, ya que están diseñados para evaluar propiedades del modelo y sus residuos.
+
+```{r}
+library(car)
+outlierTest(log.model)
+```
+
+```{r}
+summary(influence.measures(log.model))
+```
+
+
+```{r}
+influencePlot(log.model)
+```
+
+Llegados a este punto, cabe comentar que el **tamaño de muestra** es importante a la hora de analizar la validez del modelo, donde en el libro Hanbook of biological statistics recomiendan que el número de observaciones sea como mínimo entre 10 y 20 veces el número de predictores del modelo trantando de evitar que una variable parezca influyente cuando no lo es. En nuestro caso, 3 variables lo recomendable serían 50-60 observaciones pero disponemos de 27 resultando escaso para una evaluación óptima del modelo.
+
+
+## (c) Discutir la capacidad del modelo obtenido para pronosticar correctamente la cantidad de alteraciones y la significación de los términos predictores en el modelo.
+
+Una vez establecidos los modelos de regresión, debemos comprobar como se produce la predicción de la variable respuesta (alteraciones cromosómicas). Para ello, lo vamos a aplicar a un nuevo conjunto de datos, extraido del propio dataframe para comprobar si predice valores similares a los obtenidos en las observaciones.
+
+En concreto, usaremos la función predict() que toma como argumento el modelo y el nuevo dataframe extraido:
+
+Vamos a registrar 3 situaciones para evaluar la predicción:
+
+-Con una dosis de 1.0 Grays, una tasa de dosis en 0.25 Grays/h y 1907 cientos de células.
+
+-Con una dosis de 2.5 Grays, una tasa de dosis en 1.0 Grays/h y 310 cientos de células.
+
+-Con una dosis de 3 Grays, una tasa de dosis en 1 Grays/h y 182 cientos de células.
+
+
+```{r}
+df.pred <- data.frame(cells=c(1907, 310, 182), doseamt=c(1.0, 2.5, 5), doserate=c(0.25, 1, 3))
+kable(df.pred, format = "markdown")
+```
+
+
+
+Evaluamos **primer** modelo: 
+
+
+```{r}
+predict(object=model.regre1, newdata=df.pred)
+```
+
+Hemos seleccionado datos de cells variados en valor para ver si influía y aqui mostramos una comparación con los valores observados.
+
+```{r}
+comp_ca_model1 <- data.frame(Ca_observados=c(102, 100, 225), Ca_predichos=c(103.28094, 70.75958, 205.86160))
+kable(comp_ca_model1, format = "markdown")
+```
+
+Vemos que la precisión es más alta en en el valor alto de cells. Mostramos a continuación el intervalo de confianza al 95% para la predicción de los valores proporcionados.
+
+```{r}
+predict(object=model.regre1, newdata=df.pred, interval="confidence", level=0.95)
+```
+
+De esta manera, se puede observar que el intervalo de confianza es muy amplio para las 3 variables predictoras, por lo que el modelo no es preciso y existe una gran probabilidad de registrar valores erroneos predichos de alteraciones cromosómicas.
+
+
+Evaluamos **segundo** modelo:
+
+```{r}
+predict(object=log.model, newdata=df.pred)
+```
+```{r}
+comp.ca.model1 <- data.frame(Ca.observados=c(102, 100, 225), Ca.predichos=c(exp(4.495867),  exp(4.585937), exp(5.433670)))
+kable(comp.ca.model1, format = "markdown")
+```
+
+En este caso, observamos valores mucho mas cercanos al valor real. Parece que, el modelo en escala logarítmica a pesar de aumentar la multicolinealidad, esto no siempre conduce a un rendimiento deficiente del modelo, y su impacto puede variar según el contexto y la naturaleza de los datos. 
+
+```{r}
+int.pred.log <- predict(object=log.model, newdata=df.pred, interval="confidence", level=0.95)
+pred.exp <- exp(int.pred.log)
+pred.exp
+```
+
+Los intervalos donde se encuentra el valor Y (alteraciones cromosómicas) ahora es mucho mas estrecho, lo que indica que la capacidad predictora del modelo ha mejorado considerablemente y que existe una menor probabilidad de obtener datos erróneos acercandose mucho a al valor de los datos reales.
+
+
+## (d) Comentar las conclusiones del análisis.
+
+En resumen, nos encontramos con dos modelos de regresión lineal múltiple extraidos de las observaciones de 3 variables predictoras, donde en uno de ellos hemos detectado ausencia de evidencia de normalidad causada por un outlier, retirando esa observación y volviendo a elaborar el mismo modelo excluyéndola. 
+
+ca = -74.15392 +0.06871cells + 41.33160doseamt + 20.28402doserate
+
+Dichas pruebas de modelo retirando outliers han dado lugar a un modelo muy poco preciso. 
+
+Hemos recurrido a la transformación logarítmica, donde parece que el modelo alcanza gran parte de robustez para explicar el comportanmiento de la variable respuesta en términos relativos y predecirla.
+
+**ln(ca)** = -2.13918 + 0.91453**ln(cells)** + 1.61398**ln(doseamt)** + 0.19666**ln(doserate)**
+
+Para obtener la interpretación en la escala original, aplica la función exponencial a cada término logarítmico:
+
+**ca** = **exp**(-2.13918)exp(0.91453**ln(cells)**)**exp**(1.61398**ln(doseamt)**)**exp**(0.19666**ln(doserate)**)
+
+Concluimos que el modelo es capaz de explicar el 92.51% de la variabilidad observada en las alteraciones cromosómicas en términos relativos. El test F muestra que es significativo (p-value: ~ 0). Se satisfacen todas las condiciones para este tipo de regresión múltiple, a excepción de la multicolinealidad de cells y doseamt. No obstante, el tamaño muestral es insuficiente. Puede que, con un tamaño de muestra suficiente no hubiéramos tenido que transformar los datos.
